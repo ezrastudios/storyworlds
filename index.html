@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="./src/style.css" />
 </head>
 <body>
-  <main id="app" data-mode="explore">
+  <main id="app" data-mode="explore" data-brush-lock="off">
     <section id="viewport" aria-label="Lienzo 3D de Story Worlds"></section>
 
     <header class="topbar ui-layer">
@@ -26,11 +26,12 @@
       <button class="tool" data-tool="water" type="button" title="Agua">🌊</button>
       <button class="tool" data-tool="stone" type="button" title="Roca">🪨</button>
       <button class="tool" data-tool="erase" type="button" title="Borrar">⌫</button>
+      <button id="brushLockBtn" class="tool lock-tool" type="button" title="Bloquear pincel">🔒</button>
     </aside>
 
     <aside id="infoPanel" class="panel info-panel ui-layer">
       <strong>v0.3</strong>
-      <span>Modo Explorar mueve la cámara. Cambia a Editar para pintar con toques.</span>
+      <span>Explorar mueve la cámara. Editar pinta con toques. Activa 🔒 para dibujar arrastrando.</span>
     </aside>
 
     <nav class="quickbar">
