@@ -7,29 +7,36 @@
   <link rel="stylesheet" href="./src/style.css" />
 </head>
 <body>
-  <main id="app">
+  <main id="app" data-mode="explore">
     <section id="viewport" aria-label="Lienzo 3D de Story Worlds"></section>
 
-    <header class="topbar">
+    <header class="topbar ui-layer">
       <div>
         <p class="eyebrow">Ezra Studios</p>
         <h1>Story Worlds</h1>
       </div>
-      <button id="resetBtn" class="ghost-btn" type="button">Reiniciar</button>
+      <div class="top-actions">
+        <button id="modeBtn" class="pill-btn primary" type="button">Explorar</button>
+        <button id="resetBtn" class="pill-btn" type="button">Reiniciar</button>
+      </div>
     </header>
 
-    <aside class="panel tools-panel">
-      <p class="panel-title">Pintar</p>
-      <button class="tool active" data-tool="grass" type="button">🌿 Terreno</button>
-      <button class="tool" data-tool="water" type="button">🌊 Agua</button>
-      <button class="tool" data-tool="stone" type="button">🪨 Roca</button>
-      <button class="tool" data-tool="erase" type="button">🫥 Borrar</button>
+    <aside id="toolsPanel" class="panel tools-panel ui-layer" aria-label="Herramientas de edición">
+      <button class="tool active" data-tool="grass" type="button" title="Terreno">🌿</button>
+      <button class="tool" data-tool="water" type="button" title="Agua">🌊</button>
+      <button class="tool" data-tool="stone" type="button" title="Roca">🪨</button>
+      <button class="tool" data-tool="erase" type="button" title="Borrar">⌫</button>
     </aside>
 
-    <aside class="panel info-panel">
-      <strong>v0.2</strong>
-      <span>Motor Vite y Three.js. Toca una celda para pintar. Arrastra para girar.</span>
+    <aside id="infoPanel" class="panel info-panel ui-layer">
+      <strong>v0.3</strong>
+      <span>Modo Explorar mueve la cámara. Cambia a Editar para pintar con toques.</span>
     </aside>
+
+    <nav class="quickbar">
+      <button id="hideUiBtn" class="round-btn" type="button" aria-label="Ocultar interfaz">👁️</button>
+      <button id="helpBtn" class="round-btn ui-layer" type="button" aria-label="Ayuda">?</button>
+    </nav>
   </main>
 
   <script type="module" src="./src/main.js"></script>
