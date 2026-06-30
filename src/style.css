@@ -127,6 +127,15 @@ h1 {
   color: white;
 }
 
+.lock-tool {
+  font-size: 18px;
+}
+
+#app[data-brush-lock="on"] .lock-tool {
+  background: var(--accent-dark);
+  color: white;
+}
+
 .info-panel {
   left: 18px;
   right: 18px;
