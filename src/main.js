@@ -1,5 +1,5 @@
-import * as THREE from 'https://esm.sh/three@0.165.0';
-import { OrbitControls } from 'https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 const viewport = document.querySelector('#viewport');
 const resetBtn = document.querySelector('#resetBtn');
@@ -198,12 +198,13 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+createGrid();
+seedWorld();
+
 function animate() {
   controls.update();
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
 }
 
-createGrid();
-seedWorld();
 animate();
