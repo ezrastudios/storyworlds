@@ -10,9 +10,14 @@ const helpBtn = document.querySelector('#helpBtn');
 const brushLockBtn = document.querySelector('#brushLockBtn');
 const modeHint = document.querySelector('#modeHint');
 const infoPanel = document.querySelector('#infoPanel');
+const undoBtn = document.querySelector('#undoBtn');
+const redoBtn = document.querySelector('#redoBtn');
+const densitySelect = document.querySelector('#densitySelect');
 const tools = document.querySelectorAll('.tool[data-tool]');
 const sizeButtons = document.querySelectorAll('.size-btn');
 
+const STORAGE_KEY = 'storyworlds.v06.autosave';
+const HISTORY_LIMIT = 80;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xdfe7df);
 scene.fog = new THREE.Fog(0xdfe7df, 20, 74);
@@ -55,7 +60,11 @@ let brushRadius = 2.2;
 let downAt = null;
 let infoTimer = null;
 let decorationTimer = null;
+let saveTimer = null;
 let lastTap = null;
+let density = 'normal';
+let undoStack = [];
+let redoStack = [];
 
 const size = 30;
 const segments = 96;
@@ -118,9 +127,7 @@ scene.add(brush);
 const rocks = new THREE.Group();
 const vegetation = new THREE.Group();
 const waterfalls = new THREE.Group();
-world.add(rocks);
-world.add(vegetation);
-world.add(waterfalls);
+world.add(rocks, vegetation, waterfalls);
 
 const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x8b7555, roughness: 0.95 });
 const leafMaterial = new THREE.MeshStandardMaterial({ color: 0x71875c, roughness: 0.98 });
@@ -196,10 +203,10 @@ function clearGroup(group) {
 }
 
 function addRock(x, z, scale = 1) {
-  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.22 * scale, 1), pebbleMaterial);
-  rock.position.set(x, getHeightAt(x, z) + 0.12 * scale, z);
+  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.18 * scale, 1), pebbleMaterial);
+  rock.position.set(x, getHeightAt(x, z) + 0.10 * scale, z);
   rock.rotation.set(seededNoise(x + 11, z - 3) * 0.55, seededNoise(x, z) * Math.PI * 2, (seededNoise(x - 7, z + 5) - 0.5) * 0.28);
-  rock.scale.set(1.32, 0.48, 0.82);
+  rock.scale.set(1.18, 0.52, 0.88);
   rock.castShadow = true;
   rocks.add(rock);
 }
@@ -239,10 +246,10 @@ function addWaterfall(point) {
   const top = getHeightAt(x, z) + 0.08;
   const bottom = Math.max(waterLevel + 0.05, top - 1.35);
   const height = Math.max(0.35, top - bottom);
-  const ribbon = new THREE.Mesh(new THREE.PlaneGeometry(0.95, height, 1, 8), waterfallMaterial);
+  const ribbon = new THREE.Mesh(new THREE.PlaneGeometry(0.95, height, 1, 8), waterfallMaterial.clone());
   ribbon.position.set(x, bottom + height / 2, z);
   ribbon.rotation.y = seededNoise(x, z) * Math.PI * 2;
-  ribbon.castShadow = false;
+  ribbon.userData.storyWorld = { type: 'waterfall', x, z };
   waterfalls.add(ribbon);
 }
 
@@ -263,10 +270,9 @@ function updateColorAt(i) {
   terrainGeometry.attributes.color.setXYZ(i, color.r, color.g, color.b);
 }
 
-function applyHeight(i, immediate = false) {
+function applyHeight(i) {
   const data = terrainData[i];
-  const targetHeight = baseHeights[i] + data.offset - data.water * 0.30 + data.stone * 0.34;
-  data.height = immediate ? targetHeight : THREE.MathUtils.lerp(data.height, targetHeight, 0.9);
+  data.height = baseHeights[i] + data.offset - data.water * 0.30 + data.stone * 0.34;
   position.setY(i, data.height);
 }
 
@@ -295,14 +301,84 @@ function naturalRelax(point, strength = 0.18) {
     const falloff = Math.pow(1 - distance / brushRadius, 2.2);
     const data = terrainData[i];
     data.offset = THREE.MathUtils.lerp(data.offset, averageOffset, falloff * strength);
-    applyHeight(i, true);
+    applyHeight(i);
     updateColorAt(i);
   }
 }
 
-function paintAt(point, tool) {
+function makeSnapshot() {
+  return {
+    density,
+    terrain: terrainData.map(d => [d.water, d.stone, d.offset, d.vegetation]),
+    waterfalls: waterfalls.children.map(fall => fall.userData.storyWorld).filter(Boolean)
+  };
+}
+
+function applySnapshot(snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.terrain)) return;
+  density = snapshot.density || 'normal';
+  if (densitySelect) densitySelect.value = density;
+  snapshot.terrain.forEach((row, i) => {
+    if (!terrainData[i]) return;
+    terrainData[i].water = row[0] || 0;
+    terrainData[i].stone = row[1] || 0;
+    terrainData[i].offset = row[2] || 0;
+    terrainData[i].vegetation = row[3] || 0;
+    applyHeight(i);
+    updateColorAt(i);
+  });
+  clearGroup(waterfalls);
+  (snapshot.waterfalls || []).forEach(item => addWaterfall(new THREE.Vector3(item.x, 0, item.z)));
+  position.needsUpdate = true;
+  terrainGeometry.attributes.color.needsUpdate = true;
+  terrainGeometry.computeVertexNormals();
+  refreshDecorations();
+}
+
+function pushHistory() {
+  undoStack.push(makeSnapshot());
+  if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+  redoStack = [];
+}
+
+function undo() {
+  if (!undoStack.length) return;
+  redoStack.push(makeSnapshot());
+  applySnapshot(undoStack.pop());
+  scheduleSave();
+}
+
+function redo() {
+  if (!redoStack.length) return;
+  undoStack.push(makeSnapshot());
+  applySnapshot(redoStack.pop());
+  scheduleSave();
+}
+
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(makeSnapshot())); } catch {}
+  }, 250);
+}
+
+function loadSavedWorld() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    applySnapshot(JSON.parse(raw));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function paintAt(point, tool, options = {}) {
+  if (!options.skipHistory) pushHistory();
+
   if (tool === 'waterfall') {
     addWaterfall(point);
+    scheduleSave();
     return;
   }
 
@@ -354,7 +430,7 @@ function paintAt(point, tool) {
       data.vegetation = THREE.MathUtils.clamp(data.vegetation + falloff * 0.06, 0, 1);
     }
 
-    applyHeight(i, true);
+    applyHeight(i);
     updateColorAt(i);
     changed = true;
   }
@@ -366,14 +442,20 @@ function paintAt(point, tool) {
     terrainGeometry.attributes.color.needsUpdate = true;
     terrainGeometry.computeVertexNormals();
     scheduleDecorations();
+    scheduleSave();
   }
 }
 
 function refreshDecorations() {
   clearGroup(vegetation);
   clearGroup(rocks);
+  const densityRules = {
+    low: { step: 31, tree: 0.86, grass: 0.68, rock: 0.96 },
+    normal: { step: 23, tree: 0.78, grass: 0.55, rock: 0.94 },
+    high: { step: 13, tree: 0.70, grass: 0.42, rock: 0.90 }
+  }[density] || { step: 23, tree: 0.78, grass: 0.55, rock: 0.94 };
 
-  for (let i = 0; i < position.count; i += 17) {
+  for (let i = 0; i < position.count; i += densityRules.step) {
     const x = position.getX(i);
     const z = position.getZ(i);
     if (Math.abs(x) > size * 0.48 || Math.abs(z) > size * 0.48) continue;
@@ -383,16 +465,16 @@ function refreshDecorations() {
     const slope = getSlopeAt(i);
     const shore = data.water > 0.18 || Math.abs(data.height - waterLevel) < 0.18;
 
-    if (data.water < 0.18 && data.vegetation > 0.26 && slope < 0.26 && n > 0.48) {
+    if (data.water < 0.18 && data.vegetation > 0.26 && slope < 0.26 && n > densityRules.grass) {
       const scale = 0.75 + seededNoise(x + 4, z - 2) * 0.6;
-      if (data.vegetation > 0.62 && n > 0.72) addTree(x, z, scale);
+      if (data.vegetation > 0.62 && n > densityRules.tree) addTree(x, z, scale);
       else addGrassTuft(x, z, scale);
     }
 
-    if (data.water < 0.25 && (data.stone > 0.36 || slope > 0.42 || (shore && n > 0.9))) {
+    if (data.water < 0.25 && (data.stone > 0.48 || slope > 0.55 || (shore && n > densityRules.rock))) {
       const rx = x + (n - 0.5) * 0.45;
       const rz = z + (seededNoise(z, x) - 0.5) * 0.45;
-      addRock(rx, rz, 0.32 + n * 0.48);
+      addRock(rx, rz, 0.26 + n * 0.38);
     }
   }
 }
@@ -403,15 +485,15 @@ function scheduleDecorations() {
 }
 
 function seedWorld() {
-  paintAt(new THREE.Vector3(0, 0, 0), 'water');
-  paintAt(new THREE.Vector3(1.5, 0, -0.5), 'water');
-  paintAt(new THREE.Vector3(-1.2, 0, 0.9), 'water');
-  paintAt(new THREE.Vector3(4.2, 0, 2.5), 'stone');
-  paintAt(new THREE.Vector3(4.8, 0, 2.1), 'stone');
-  paintAt(new THREE.Vector3(-5, 0, -3), 'stone');
-  paintAt(new THREE.Vector3(-3.8, 0, 2.5), 'raise');
-  paintAt(new THREE.Vector3(-4.5, 0, -4), 'forest');
-  paintAt(new THREE.Vector3(-5.2, 0, -3.6), 'forest');
+  paintAt(new THREE.Vector3(0, 0, 0), 'water', { skipHistory: true });
+  paintAt(new THREE.Vector3(1.5, 0, -0.5), 'water', { skipHistory: true });
+  paintAt(new THREE.Vector3(-1.2, 0, 0.9), 'water', { skipHistory: true });
+  paintAt(new THREE.Vector3(4.2, 0, 2.5), 'stone', { skipHistory: true });
+  paintAt(new THREE.Vector3(4.8, 0, 2.1), 'stone', { skipHistory: true });
+  paintAt(new THREE.Vector3(-5, 0, -3), 'stone', { skipHistory: true });
+  paintAt(new THREE.Vector3(-3.8, 0, 2.5), 'raise', { skipHistory: true });
+  paintAt(new THREE.Vector3(-4.5, 0, -4), 'forest', { skipHistory: true });
+  paintAt(new THREE.Vector3(-5.2, 0, -3.6), 'forest', { skipHistory: true });
   refreshDecorations();
 }
 
@@ -490,14 +572,18 @@ function bindPress(element, handler) {
 
 renderer.domElement.addEventListener('pointerdown', event => {
   const point = pickPoint(event);
-  downAt = { x: event.clientX, y: event.clientY, point, time: performance.now() };
+  downAt = { x: event.clientX, y: event.clientY, point, time: performance.now(), historySaved: false };
   updateBrush(event);
-  if (mode === 'edit' && brushLock) paintAt(point, currentTool);
+  if (mode === 'edit' && brushLock) {
+    pushHistory();
+    downAt.historySaved = true;
+    paintAt(point, currentTool, { skipHistory: true });
+  }
 });
 
 renderer.domElement.addEventListener('pointermove', event => {
   const point = updateBrush(event);
-  if (mode === 'edit' && brushLock && downAt && point) paintAt(point, currentTool);
+  if (mode === 'edit' && brushLock && downAt && point) paintAt(point, currentTool, { skipHistory: true });
 });
 
 renderer.domElement.addEventListener('pointerup', event => {
@@ -506,6 +592,7 @@ renderer.domElement.addEventListener('pointerup', event => {
   const now = performance.now();
 
   if (mode === 'edit' && !brushLock && moved <= tapMoveLimit) paintAt(downAt.point, currentTool);
+  if (mode === 'edit' && brushLock && downAt.historySaved) scheduleSave();
 
   if (mode === 'explore' && moved <= tapMoveLimit) {
     const sameSpot = lastTap ? Math.hypot(event.clientX - lastTap.x, event.clientY - lastTap.y) < 34 : false;
@@ -537,10 +624,20 @@ bindPress(hideUiBtn, () => {
   hideUiBtn.textContent = app.classList.contains('ui-hidden') ? '☰' : '👁️';
 });
 bindPress(helpBtn, showInfo);
+bindPress(undoBtn, undo);
+bindPress(redoBtn, redo);
 tools.forEach(button => bindPress(button, () => setTool(button.dataset.tool)));
 sizeButtons.forEach(button => bindPress(button, () => setBrushSize(button.dataset.size)));
 
+densitySelect?.addEventListener('change', event => {
+  pushHistory();
+  density = event.target.value;
+  refreshDecorations();
+  scheduleSave();
+});
+
 bindPress(resetBtn, () => {
+  pushHistory();
   clearGroup(vegetation);
   clearGroup(rocks);
   clearGroup(waterfalls);
@@ -553,6 +650,7 @@ bindPress(resetBtn, () => {
   terrainGeometry.attributes.color.needsUpdate = true;
   terrainGeometry.computeVertexNormals();
   seedWorld();
+  scheduleSave();
 });
 
 window.addEventListener('resize', () => {
@@ -561,7 +659,10 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-seedWorld();
+if (!loadSavedWorld()) {
+  seedWorld();
+  scheduleSave();
+}
 setMode('explore');
 setBrushLock(false);
 setBrushSize('medium');
