@@ -15,7 +15,7 @@ const tools = [...document.querySelectorAll('.tool[data-tool]')];
 const sizeButtons = [...document.querySelectorAll('.size-btn')];
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 220);
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 240);
 camera.position.set(18, 16, 24);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
@@ -46,12 +46,16 @@ const skySphere = new THREE.Mesh(
 );
 scene.add(skySphere);
 
-const sunDisk = new THREE.Mesh(new THREE.SphereGeometry(1.1, 20, 12), new THREE.MeshBasicMaterial({ color: 0xffe8a0 }));
-const moonDisk = new THREE.Mesh(new THREE.SphereGeometry(0.8, 20, 12), new THREE.MeshBasicMaterial({ color: 0xe8edff }));
+const sunDiskMaterial = new THREE.MeshBasicMaterial({ color: 0xffe8a0, depthTest: false });
+const moonDiskMaterial = new THREE.MeshBasicMaterial({ color: 0xe8edff, depthTest: false });
+const sunDisk = new THREE.Mesh(new THREE.SphereGeometry(1.1, 20, 12), sunDiskMaterial);
+const moonDisk = new THREE.Mesh(new THREE.SphereGeometry(0.8, 20, 12), moonDiskMaterial);
+sunDisk.renderOrder = 999;
+moonDisk.renderOrder = 999;
 scene.add(sunDisk, moonDisk);
 
 const cloudGroup = new THREE.Group();
-const cloudMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45 });
+const cloudMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45, depthWrite: false });
 scene.add(cloudGroup);
 function addCloud(x, y, z, s) {
   const g = new THREE.Group();
@@ -103,7 +107,7 @@ const falls = new THREE.Group();
 world.add(vegetation, rocks, falls);
 
 const mats = {
-  grass: new THREE.MeshStandardMaterial({ color: 0x657c51, roughness: 0.98 }),
+  grass: new THREE.MeshStandardMaterial({ color: 0x657c51, roughness: 0.98, side: THREE.DoubleSide }),
   flower1: new THREE.MeshStandardMaterial({ color: 0xe8d0d6, roughness: 0.98 }),
   flower2: new THREE.MeshStandardMaterial({ color: 0xf0e4a2, roughness: 0.98 }),
   trunk: new THREE.MeshStandardMaterial({ color: 0x876f4e, roughness: 0.96 }),
@@ -144,15 +148,16 @@ function ridge(x, z, angle, off, width, h) {
 }
 function colorAt(i) {
   const d = data[i];
-  const h = d.h;
-  const shore = THREE.MathUtils.clamp(d.water * 1.1 + Math.max(0, 0.28 - Math.abs(h - WATER_LEVEL)) * 2, 0, 1);
+  const visibleH = d.h - d.water * 0.26 + d.stone * 0.16;
+  const nearWater = THREE.MathUtils.clamp(1 - Math.abs(visibleH - WATER_LEVEL) / 0.8, 0, 1);
+  const beach = nearWater * (1 - d.water * 0.75);
   const c = new THREE.Color(0xaab486)
-    .lerp(new THREE.Color(0xb8c195), 0.25)
-    .lerp(new THREE.Color(0x74885d), d.veg * 0.18)
-    .lerp(new THREE.Color(0xcfc394), shore * (1 - d.water) * 0.7)
+    .lerp(new THREE.Color(0xb8c195), 0.24)
+    .lerp(new THREE.Color(0x74885d), d.veg * 0.16)
+    .lerp(new THREE.Color(0xd6c99c), beach * 0.95)
     .lerp(new THREE.Color(0x8cbaba), d.water * 0.82)
     .lerp(new THREE.Color(0xa8a195), d.stone * 0.65)
-    .lerp(new THREE.Color(0x9d9078), Math.abs(h) * 0.05);
+    .lerp(new THREE.Color(0x9d9078), Math.max(0, d.h - 1.0) * 0.08);
   geom.attributes.color.setXYZ(i, c.r, c.g, c.b);
 }
 function applyPoint(i) {
@@ -174,10 +179,21 @@ function heightAt(x, z) {
   }
   return pos.getY(best);
 }
+function dataAt(x, z) {
+  let best = 0, dist = Infinity;
+  for (let i = 0; i < pos.count; i += 3) {
+    const dx = pos.getX(i) - x, dz = pos.getZ(i) - z;
+    const d = dx * dx + dz * dz;
+    if (d < dist) { dist = d; best = i; }
+  }
+  return data[best];
+}
 function biomeAt(x, z) {
   const h = heightAt(x, z);
-  if (Math.abs(h - WATER_LEVEL) < 0.32) return 'coast';
-  if (h > 1.15) return 'highland';
+  const d = dataAt(x, z);
+  if (d.water > 0.12 || Math.abs(h - WATER_LEVEL) < 0.55) return 'coast';
+  if (h > 1.0) return 'highland';
+  if (d.veg > 0.58) return 'forest';
   return 'plains';
 }
 function clearGroup(g) {
@@ -241,42 +257,44 @@ function addGrass(x, z, scale = 1) {
   const g = new THREE.Group();
   const count = 2 + Math.floor(rand(x, z) * 3);
   for (let i = 0; i < count; i++) {
-    const b = new THREE.Mesh(new THREE.ConeGeometry(0.025 * scale, 0.16 * scale, 4), mats.grass);
-    b.position.set((rand(x + i, z) - 0.5) * 0.24, 0.08 * scale, (rand(x, z + i) - 0.5) * 0.24);
-    b.rotation.z = (rand(x + i * 2, z) - 0.5) * 0.55;
-    g.add(b);
+    const blade = new THREE.Mesh(new THREE.PlaneGeometry(0.035 * scale, 0.12 * scale), mats.grass);
+    blade.position.set((rand(x + i, z) - 0.5) * 0.26, 0.065 * scale, (rand(x, z + i) - 0.5) * 0.26);
+    blade.rotation.set(0, rand(x + i * 3, z) * Math.PI, (rand(x + i * 2, z) - 0.5) * 0.35);
+    g.add(blade);
   }
-  if (rand(x + 4, z - 1) > 0.82) {
-    const flower = new THREE.Mesh(new THREE.SphereGeometry(0.035 * scale, 6, 4), rand(x, z) > 0.5 ? mats.flower1 : mats.flower2);
-    flower.position.y = 0.16 * scale;
-    g.add(flower);
+  if (rand(x + 4, z - 1) > 0.78) {
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.005 * scale, 0.006 * scale, 0.10 * scale, 4), mats.grass);
+    const flower = new THREE.Mesh(new THREE.SphereGeometry(0.028 * scale, 6, 4), rand(x, z) > 0.5 ? mats.flower1 : mats.flower2);
+    stem.position.y = 0.05 * scale;
+    flower.position.y = 0.115 * scale;
+    g.add(stem, flower);
   }
-  g.position.set(x, heightAt(x, z) + 0.02, z);
+  g.position.set(x, heightAt(x, z) + 0.018, z);
   vegetation.add(g);
 }
 function addTree(x, z, scale = 1) {
   const biome = biomeAt(x, z);
   const g = new THREE.Group();
-  const trunkH = biome === 'coast' ? 0.7 : 0.45;
+  const trunkH = biome === 'coast' ? 0.72 : biome === 'highland' ? 0.38 : 0.46;
   const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.045 * scale, 0.07 * scale, trunkH * scale, 6), mats.trunk);
   trunk.position.y = trunkH * scale * 0.5;
   g.add(trunk);
   if (biome === 'coast') {
     for (let i = 0; i < 5; i++) {
       const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.09 * scale, 0.56 * scale, 5), mats.palm);
-      leaf.position.y = 0.76 * scale;
+      leaf.position.y = 0.78 * scale;
       leaf.rotation.z = Math.PI / 2.7;
       leaf.rotation.y = i * Math.PI * 0.4;
       g.add(leaf);
     }
   } else if (biome === 'highland') {
-    const pine = new THREE.Mesh(new THREE.ConeGeometry(0.30 * scale, 0.85 * scale, 7), mats.pine);
-    pine.position.y = 0.72 * scale;
+    const pine = new THREE.Mesh(new THREE.ConeGeometry(0.28 * scale, 0.78 * scale, 7), mats.pine);
+    pine.position.y = 0.66 * scale;
     g.add(pine);
   } else {
     const crown = new THREE.Mesh(new THREE.SphereGeometry(0.32 * scale, 8, 6), mats.leaf);
     crown.scale.set(1.1, 0.86, 1);
-    crown.position.y = 0.7 * scale;
+    crown.position.y = 0.70 * scale;
     g.add(crown);
   }
   g.position.set(x, heightAt(x, z) + 0.02, z);
@@ -314,25 +332,26 @@ function refreshDecorations() {
     const n = rand(x * 1.4, z * 1.4);
     if (d.veg > 0.25 && n > 1 - 0.42 * densityMult) {
       if (d.veg > 0.55 && n > 1 - 0.16 * densityMult) addTree(x, z, 0.65 + rand(x + 3, z) * 0.58);
-      else addGrass(x, z, 0.7 + rand(x, z + 2) * 0.5);
+      else addGrass(x, z, 0.72 + rand(x, z + 2) * 0.42);
     }
     if ((d.stone > 0.55 || h > 1.5 || biomeAt(x, z) === 'coast') && rand(x + 9, z - 4) > 1 - 0.10 * densityMult) addRock(x, z, 0.22 + rand(x, z) * 0.35);
   }
 }
 function paintAt(p) {
+  const targetHeight = heightAt(p.x, p.z);
   for (let i = 0; i < pos.count; i++) {
     const dx = pos.getX(i) - p.x, dz = pos.getZ(i) - p.z, dist = Math.hypot(dx, dz);
     if (dist > brushRadius) continue;
     const f = Math.pow(1 - dist / brushRadius, 2.2), d = data[i];
     if (currentTool === 'grass') { d.veg = THREE.MathUtils.clamp(d.veg + f * 0.22, 0, 1); d.water = Math.max(0, d.water - f * 0.05); }
-    else if (currentTool === 'forest') { d.veg = THREE.MathUtils.clamp(d.veg + f * 0.38, 0, 1); }
+    else if (currentTool === 'forest') { d.veg = THREE.MathUtils.clamp(d.veg + f * 0.38, 0, 1); d.water = Math.max(0, d.water - f * 0.04); }
     else if (currentTool === 'water') { d.water = THREE.MathUtils.clamp(d.water + f * 0.20, 0, 1); d.h -= f * 0.035; }
     else if (currentTool === 'stone') { d.stone = THREE.MathUtils.clamp(d.stone + f * 0.18, 0, 1); }
-    else if (currentTool === 'raise') { d.h = THREE.MathUtils.clamp(d.h + f * sculptStrength, -2, 3.8); d.water = Math.max(0, d.water - f * 0.08); }
-    else if (currentTool === 'lower') { d.h = THREE.MathUtils.clamp(d.h - f * sculptStrength, -2, 3.8); }
+    else if (currentTool === 'raise') { d.h = THREE.MathUtils.clamp(d.h + f * 0.36, -2, 4.6); d.water = Math.max(0, d.water - f * 0.18); d.stone = THREE.MathUtils.clamp(d.stone + f * 0.035, 0, 1); }
+    else if (currentTool === 'lower') { d.h = THREE.MathUtils.clamp(d.h - f * 0.30, -2.4, 4.6); d.water = THREE.MathUtils.clamp(d.water + f * 0.02, 0, 1); }
     else if (currentTool === 'erase') { d.water = Math.max(0, d.water - f * 0.20); d.veg = Math.max(0, d.veg - f * 0.28); d.stone = Math.max(0, d.stone - f * 0.2); }
-    else if (currentTool === 'smooth') { d.h = THREE.MathUtils.lerp(d.h, 0, f * 0.08); }
-    else if (currentTool === 'flatten') { d.h = THREE.MathUtils.lerp(d.h, heightAt(p.x, p.z), f * 0.22); }
+    else if (currentTool === 'smooth') { d.h = THREE.MathUtils.lerp(d.h, targetHeight, f * 0.12); }
+    else if (currentTool === 'flatten') { d.h = THREE.MathUtils.lerp(d.h, targetHeight, f * 0.34); }
     applyPoint(i);
   }
   if (currentTool === 'waterfall') addWaterfall(p);
@@ -378,11 +397,11 @@ function updateSky() {
   hemi.intensity = 0.45 + day * 1.45;
   sun.intensity = 0.25 + day * 2.1;
   const angle = timeOfDay * Math.PI * 2 - Math.PI * 0.15;
-  sun.position.set(Math.cos(angle) * 20, Math.sin(angle) * 20, 10);
-  sunDisk.position.copy(sun.position);
-  moonDisk.position.set(-sun.position.x, -sun.position.y, -sun.position.z);
-  sunDisk.visible = sun.position.y > -1;
-  moonDisk.visible = moonDisk.position.y > -1;
+  sun.position.set(Math.cos(angle) * 22, Math.sin(angle) * 22, 10);
+  sunDisk.position.set(Math.cos(angle) * 48, Math.max(8, Math.sin(angle) * 30 + 18), -34);
+  moonDisk.position.set(-Math.cos(angle) * 48, Math.max(8, -Math.sin(angle) * 30 + 18), -34);
+  sunDisk.visible = day > 0.08;
+  moonDisk.visible = day < 0.92;
   cloudMaterial.opacity = 0.16 + day * 0.38;
   water.material.color.copy(new THREE.Color(0x5a6b7d).lerp(new THREE.Color(0x8cbaba), day));
 }
