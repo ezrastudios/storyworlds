@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-const $ = (s) => document.querySelector(s);
+const $ = s => document.querySelector(s);
 const app = $('#app'), viewport = $('#viewport'), modeBtn = $('#modeBtn'), seedBtn = $('#seedBtn'), resetBtn = $('#resetBtn'), hideUiBtn = $('#hideUiBtn'), helpBtn = $('#helpBtn'), brushLockBtn = $('#brushLockBtn'), timeSlider = $('#timeSlider');
 const tools = [...document.querySelectorAll('.tool[data-tool]')], sizeButtons = [...document.querySelectorAll('.size-btn')];
 
@@ -82,10 +82,50 @@ let seed = Date.now() % 999999, seedType = 0, currentTool = 'grass', mode = 'exp
 const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const brushMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.42, side: THREE.DoubleSide });
 let brush = makeBrush(); scene.add(brush);
+
 function rand(x, z, s = seed) { const n = Math.sin((x + s * 0.011) * 12.9898 + (z - s * 0.017) * 78.233) * 43758.5453; return n - Math.floor(n); }
 function gauss(x, z, cx, cz, r, h) { return Math.exp(-(((x - cx) ** 2 + (z - cz) ** 2) / (r * r))) * h; }
-function ridge(x, z, angle, off, width, h) { const d = Math.abs(Math.cos(angle) * x + Math.sin(angle) * z - off); return Math.max(0, 1 - d / width) * h; }
-function fbm(x, z) { return (rand(x, z) - .5) * 1.0 + (rand(x * 2.1, z * 2.1) - .5) * .45 + (rand(x * 4.2, z * 4.2) - .5) * .18; }
+function fbm(x, z) { return (rand(x, z) - .5) + (rand(x * 2.13 + 9, z * 2.13 - 5) - .5) * .46 + (rand(x * 4.7 - 3, z * 4.7 + 8) - .5) * .20; }
+function smoothstep(edge0, edge1, x) { const t = THREE.MathUtils.clamp((x - edge0) / (edge1 - edge0), 0, 1); return t * t * (3 - 2 * t); }
+function lerpPoint(a, b, t) { return { x: THREE.MathUtils.lerp(a.x, b.x, t), z: THREE.MathUtils.lerp(a.z, b.z, t) }; }
+function makePath(kind, count = 7) {
+  const pts = [];
+  let start, end;
+  if (kind === 'river') {
+    const side = Math.floor(rand(40, count) * 4);
+    start = side === 0 ? { x: -30, z: (rand(1, 2) - .5) * 44 } : side === 1 ? { x: 30, z: (rand(2, 3) - .5) * 44 } : side === 2 ? { x: (rand(3, 4) - .5) * 44, z: -30 } : { x: (rand(4, 5) - .5) * 44, z: 30 };
+    end = { x: -start.x + (rand(6, 7) - .5) * 16, z: -start.z + (rand(8, 9) - .5) * 16 };
+  } else {
+    start = { x: (rand(11, 12) - .5) * 40, z: (rand(12, 13) - .5) * 40 };
+    end = { x: (rand(13, 14) - .5) * 40, z: (rand(14, 15) - .5) * 40 };
+  }
+  const dx = end.x - start.x, dz = end.z - start.z, len = Math.hypot(dx, dz) || 1;
+  const nx = -dz / len, nz = dx / len;
+  const amp = kind === 'river' ? 9 + rand(20, 21) * 7 : 6 + rand(22, 23) * 6;
+  for (let i = 0; i < count; i++) {
+    const t = i / (count - 1);
+    const base = lerpPoint(start, end, t);
+    const bend = Math.sin(t * Math.PI * (1.2 + rand(i, 30) * 1.6) + rand(i, 31) * 3.2) * amp * (0.35 + Math.sin(t * Math.PI) * 0.95);
+    const wobbleX = (rand(i * 3, 50) - .5) * 7;
+    const wobbleZ = (rand(i * 3, 51) - .5) * 7;
+    pts.push({ x: base.x + nx * bend + wobbleX, z: base.z + nz * bend + wobbleZ });
+  }
+  return pts;
+}
+function distanceToSegment(px, pz, a, b) {
+  const vx = b.x - a.x, vz = b.z - a.z, wx = px - a.x, wz = pz - a.z;
+  const c = THREE.MathUtils.clamp((wx * vx + wz * vz) / (vx * vx + vz * vz || 1), 0, 1);
+  const x = a.x + vx * c, z = a.z + vz * c;
+  return { d: Math.hypot(px - x, pz - z), t: c, x, z };
+}
+function distanceToPath(x, z, path) {
+  let best = { d: Infinity, t: 0, x: 0, z: 0, segment: 0 };
+  for (let i = 0; i < path.length - 1; i++) {
+    const r = distanceToSegment(x, z, path[i], path[i + 1]);
+    if (r.d < best.d) best = { ...r, segment: i };
+  }
+  return best;
+}
 function visibleHeight(d) { return d.h - d.water * 0.26 + d.stone * 0.16; }
 function colorAt(i) {
   const d = data[i], h = visibleHeight(d);
@@ -104,25 +144,73 @@ function clearGroup(g) { for (const c of [...g.children]) { g.remove(c); if (c.c
 function clearDecorations() { clearGroup(lowPlants); clearGroup(trees); clearGroup(rocks); clearGroup(falls); }
 
 function generateSeed(newSeed = Math.floor(Math.random() * 999999)) {
-  seed = newSeed; seedType = Math.floor(rand(10, 20) * 8); clearDecorations();
-  const angle = rand(2, 8) * Math.PI, lakeX = (rand(7, 9) - .5) * 18, lakeZ = (rand(9, 7) - .5) * 18;
+  seed = newSeed; seedType = Math.floor(rand(10, 20) * 6); clearDecorations();
+  const riverPath = makePath('river', 8);
+  const ridgePathA = makePath('ridge', 6);
+  const ridgePathB = makePath('ridge', 5);
+  const lakeA = { x: (rand(7, 9) - .5) * 26, z: (rand(9, 7) - .5) * 26, r: 5 + rand(1, 9) * 4 };
+  const lakeB = { x: (rand(13, 19) - .5) * 32, z: (rand(19, 13) - .5) * 32, r: 3.5 + rand(2, 8) * 3 };
   for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), z = pos.getZ(i); let h = 0, w = 0, veg = .16 + rand(x * .35, z * .35) * .26, forest = 0, stone = 0;
-    const organic = fbm(x * .18, z * .18) * .55 + fbm(x * .42, z * .42) * .18;
-    if (seedType === 0) { h += gauss(x,z,-15,-8,10,1.7)+gauss(x,z,14,8,9,1.4); const river = Math.abs(x-(Math.sin(z*.17+organic)*4 + organic*1.2)); w=Math.max(THREE.MathUtils.clamp(1-river/2.4,0,1)*.85,THREE.MathUtils.clamp((7-Math.hypot(x-lakeX,z-lakeZ))/4,0,1)); forest += gauss(x,z,-12,9,10,.65); }
-    else if (seedType === 1) { h += gauss(x,z,0,0,8,3.2)+ridge(x,z,angle,organic*2,4,1.2)+organic*.7; w=THREE.MathUtils.clamp((4-Math.abs(x+Math.sin(z*.2+organic)*2))/2.4,0,.55); stone += .34; forest += gauss(x,z,-12,-10,9,.45); }
-    else if (seedType === 2) { const island=Math.hypot(x+organic*2,z-organic*2); h += gauss(x,z,0,0,17,1.35)-Math.max(0,island-14)*.18+organic*.35; w=THREE.MathUtils.clamp((island-13)/7,0,1); forest += .28; }
-    else if (seedType === 3) { const canyon=Math.abs(Math.sin(angle)*x-Math.cos(angle)*z+organic*2.8); h += ridge(x,z,angle,organic,5.2,1.8)-Math.max(0,1-canyon/3)*1.25+organic*.25; w=THREE.MathUtils.clamp(1-canyon/1.8,0,1)*.74; stone += .42; veg -= .08; }
-    else if (seedType === 4) { h += gauss(x,z,0,0,6.5,3.0)-gauss(x,z,organic*2,organic*-2,2.2,1.5)+organic*.55; w=THREE.MathUtils.clamp((5-Math.hypot(x-5,z+3))/3.2,0,1); stone += .45; }
-    else if (seedType === 5) { h += ridge(x,z,angle,-8+organic,3,1.5)+ridge(x,z,angle,8+organic,3,1.5)+organic*.42; w=Math.max(THREE.MathUtils.clamp((5-Math.hypot(x-lakeX,z-lakeZ))/3.5,0,1),THREE.MathUtils.clamp((5-Math.hypot(x+10,z-8))/3.5,0,1)); forest += gauss(x,z,8,8,8,.55); }
-    else if (seedType === 6) { h += gauss(x,z,-8,-8,7,1.2)+gauss(x,z,8,9,7,1.1)+organic*.45; w=Math.max(THREE.MathUtils.clamp((4.5-Math.hypot(x-8,z-4))/3,0,1),THREE.MathUtils.clamp((4.5-Math.hypot(x+9,z+6))/3,0,1)); forest += .55; }
-    else { h += gauss(x,z,-10,4,9,1.8)+ridge(x,z,angle,0,2.4,2.0)-gauss(x,z,7,-7,5,1.1)+organic*.6; const r=Math.abs(Math.sin(angle)*x-Math.cos(angle)*z+organic*4); w=THREE.MathUtils.clamp(1-r/2.4,0,.8); stone += .38; forest += gauss(x,z,-14,12,10,.6); }
-    h += organic * .22 + Math.sin((x + seed) * .11) * .04 + Math.cos((z - seed) * .12) * .04;
-    data[i] = { h, water: THREE.MathUtils.clamp(w,0,1), veg: THREE.MathUtils.clamp(veg,0,1), forest: THREE.MathUtils.clamp(forest,0,1), stone: THREE.MathUtils.clamp(stone + Math.max(0,h-.7)*.18 + rand(x*1.8,z*1.8)*.08,0,.8), density: 1 };
+    const x = pos.getX(i), z = pos.getZ(i);
+    const river = distanceToPath(x, z, riverPath);
+    const ridgeA = distanceToPath(x, z, ridgePathA);
+    const ridgeB = distanceToPath(x, z, ridgePathB);
+    const organic = fbm(x * .13, z * .13);
+    const micro = fbm(x * .42 + 11, z * .42 - 8);
+    let h = organic * .38 + micro * .09, w = 0, veg = .18 + rand(x * .25, z * .25) * .24, forest = 0, stone = 0;
+
+    const riverWidth = 1.4 + rand(river.segment + 6, river.segment + 8) * 1.6;
+    const riverMask = 1 - smoothstep(riverWidth, riverWidth + 1.4, river.d + organic * .55);
+    const bankMask = 1 - smoothstep(riverWidth + 1.3, riverWidth + 4.5, river.d + organic * .8);
+
+    const lakeMaskA = 1 - smoothstep(lakeA.r, lakeA.r + 2.2, Math.hypot(x - lakeA.x, z - lakeA.z) + micro * 1.6);
+    const lakeMaskB = seedType % 2 === 0 ? 1 - smoothstep(lakeB.r, lakeB.r + 2.0, Math.hypot(x - lakeB.x, z - lakeB.z) + organic * 1.4) : 0;
+
+    if (seedType === 0) {
+      h += (1 - smoothstep(4, 13, ridgeA.d + organic * 2.2)) * (1.1 + micro * .5);
+      h += gauss(x,z,-12 + organic * 2,10,11,.9);
+      forest += gauss(x,z,-13,8,12,.65) + bankMask * .22;
+    } else if (seedType === 1) {
+      h += (1 - smoothstep(2.4, 9, ridgeA.d + organic * 1.7)) * 2.15;
+      h += gauss(x,z,5 + organic * 2,-3,7,1.4);
+      stone += .28 + (1 - smoothstep(3, 8, ridgeA.d)) * .35;
+      forest += (1 - smoothstep(8, 16, ridgeA.d)) * .18;
+    } else if (seedType === 2) {
+      const coast = Math.hypot(x + organic * 3, z - micro * 3);
+      h += gauss(x,z,0,0,18,1.15) - Math.max(0, coast - 15) * .16;
+      w = Math.max(w, smoothstep(14.5, 21, coast + organic * 2.2));
+      forest += .25 + gauss(x,z,-7,4,9,.38);
+    } else if (seedType === 3) {
+      const canyonWidth = 1.6 + rand(80, 81) * 1.1;
+      const canyon = 1 - smoothstep(canyonWidth, canyonWidth + 3.5, river.d + micro);
+      h += (1 - smoothstep(4, 15, ridgeA.d)) * 1.2 + (1 - smoothstep(4, 14, ridgeB.d)) * .85;
+      h -= canyon * 1.35;
+      stone += .36 + canyon * .22;
+      veg -= .08;
+    } else if (seedType === 4) {
+      h += gauss(x,z,-3 + organic * 2,1 + micro * 2,6.6,2.8) - gauss(x,z,-2,1,2.4,1.3);
+      h += (1 - smoothstep(5, 13, ridgeB.d + organic)) * .8;
+      stone += .42;
+      forest += gauss(x,z,-15,12,10,.38);
+    } else {
+      h += (1 - smoothstep(3, 11, ridgeA.d + organic * 2)) * 1.5;
+      h += (1 - smoothstep(4, 12, ridgeB.d - micro)) * .95;
+      forest += gauss(x,z,9,9,11,.65) + gauss(x,z,-14,-4,9,.42);
+      stone += .16;
+    }
+
+    h -= riverMask * .55;
+    h -= Math.max(lakeMaskA, lakeMaskB) * .48;
+    w = Math.max(w, riverMask * .86, lakeMaskA, lakeMaskB);
+    veg = THREE.MathUtils.clamp(veg + forest * .18 + bankMask * .22 - stone * .08, 0, 1);
+    forest = THREE.MathUtils.clamp(forest + (bankMask * .18) + (rand(x * .19, z * .19) > .72 ? .22 : 0), 0, 1);
+    stone = THREE.MathUtils.clamp(stone + Math.max(0, h - .9) * .16 + Math.max(0, 1 - smoothstep(3, 7, ridgeA.d)) * .22 + rand(x * 1.8, z * 1.8) * .06, 0, .85);
+    data[i] = { h, water: THREE.MathUtils.clamp(w,0,1), veg, forest, stone, density: 1 };
     applyPoint(i);
   }
   updateTerrain(); refreshDecorations(); resetCamera();
 }
+
 function addGrass(x,z,scale=1){const g=new THREE.Group(), count=2+Math.floor(rand(x,z)*3); for(let i=0;i<count;i++){const blade=new THREE.Mesh(new THREE.PlaneGeometry(.028*scale,.09*scale),mats.grass); blade.position.set((rand(x+i,z)-.5)*.28,.045*scale,(rand(x,z+i)-.5)*.28); blade.rotation.set(0,rand(x+i*3,z)*Math.PI,(rand(x+i*2,z)-.5)*.25); g.add(blade);} if(rand(x+4,z-1)>.74){const flower=new THREE.Mesh(new THREE.SphereGeometry(.024*scale,6,4),rand(x,z)>.5?mats.flower1:mats.flower2); flower.position.set((rand(x,z+3)-.5)*.18,.085*scale,(rand(x+3,z)-.5)*.18); g.add(flower);} g.position.set(x,heightAt(x,z)+.014,z); lowPlants.add(g);}
 function addTree(x,z,scale=1){const biome=biomeAt(x,z), g=new THREE.Group(); const trunkH=biome==='coast'?.72:biome==='highland'?.38:.46; const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.045*scale,.07*scale,trunkH*scale,6),mats.trunk); trunk.position.y=trunkH*scale*.5; g.add(trunk); if(biome==='coast'){for(let i=0;i<5;i++){const leaf=new THREE.Mesh(new THREE.ConeGeometry(.09*scale,.56*scale,5),mats.palm); leaf.position.y=.78*scale; leaf.rotation.z=Math.PI/2.7; leaf.rotation.y=i*Math.PI*.4; g.add(leaf);}} else if(biome==='highland'){const pine=new THREE.Mesh(new THREE.ConeGeometry(.28*scale,.78*scale,7),mats.pine); pine.position.y=.66*scale; g.add(pine);} else {const crown=new THREE.Mesh(new THREE.SphereGeometry(.32*scale,8,6),mats.leaf); crown.scale.set(1.1,.86,1); crown.position.y=.70*scale; g.add(crown);} g.position.set(x,heightAt(x,z)+.02,z); g.rotation.y=rand(x,z)*Math.PI*2; trees.add(g);}
 function addRock(x,z,scale=1){const r=new THREE.Mesh(new THREE.DodecahedronGeometry(.13*scale,1),mats.rock); r.position.set(x,heightAt(x,z)+.07*scale,z); r.scale.set(.8+rand(x,z)*.7,.42+rand(z,x)*.26,.68+rand(x+4,z)*.5); r.rotation.set(rand(x,z)*.6,rand(x+1,z)*Math.PI*2,rand(x,z+1)*.5); rocks.add(r);}
