@@ -40,12 +40,12 @@ const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const pointerPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 let currentTool = 'grass';
-let isPainting = false;
 let downAt = null;
 
 const size = 30;
 const segments = 96;
 const brushRadius = 2.2;
+const tapMoveLimit = 8;
 
 const palette = {
   grass: new THREE.Color(0xaab486),
@@ -224,25 +224,25 @@ function setTool(tool) {
 }
 
 renderer.domElement.addEventListener('pointerdown', event => {
-  downAt = { x: event.clientX, y: event.clientY };
-  isPainting = true;
-  const point = updateBrush(event);
-  paintAt(point, currentTool);
+  downAt = { x: event.clientX, y: event.clientY, point: pickPoint(event) };
+  updateBrush(event);
 });
 
 renderer.domElement.addEventListener('pointermove', event => {
-  const point = updateBrush(event);
-  if (!isPainting || !downAt) return;
-  paintAt(point, currentTool);
+  updateBrush(event);
 });
 
-renderer.domElement.addEventListener('pointerup', () => {
+renderer.domElement.addEventListener('pointerup', event => {
+  if (!downAt) return;
+  const moved = Math.hypot(event.clientX - downAt.x, event.clientY - downAt.y);
+  if (moved <= tapMoveLimit) {
+    paintAt(downAt.point, currentTool);
+  }
   downAt = null;
-  isPainting = false;
 });
 
 renderer.domElement.addEventListener('pointerleave', () => {
-  isPainting = false;
+  downAt = null;
   brush.visible = false;
 });
 
