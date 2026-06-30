@@ -8,6 +8,7 @@ const modeBtn = document.querySelector('#modeBtn');
 const hideUiBtn = document.querySelector('#hideUiBtn');
 const helpBtn = document.querySelector('#helpBtn');
 const brushLockBtn = document.querySelector('#brushLockBtn');
+const modeHint = document.querySelector('#modeHint');
 const infoPanel = document.querySelector('#infoPanel');
 const tools = document.querySelectorAll('.tool[data-tool]');
 
@@ -87,12 +88,7 @@ terrainGeometry.computeVertexNormals();
 
 const terrain = new THREE.Mesh(
   terrainGeometry,
-  new THREE.MeshStandardMaterial({
-    vertexColors: true,
-    roughness: 0.98,
-    metalness: 0.01,
-    flatShading: false
-  })
+  new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.98, metalness: 0.01, flatShading: false })
 );
 terrain.receiveShadow = true;
 world.add(terrain);
@@ -101,13 +97,7 @@ const waterGeometry = new THREE.PlaneGeometry(size, size, 1, 1);
 waterGeometry.rotateX(-Math.PI / 2);
 const water = new THREE.Mesh(
   waterGeometry,
-  new THREE.MeshStandardMaterial({
-    color: 0x8bb5b5,
-    transparent: true,
-    opacity: 0.28,
-    roughness: 0.38,
-    metalness: 0.05
-  })
+  new THREE.MeshStandardMaterial({ color: 0x8bb5b5, transparent: true, opacity: 0.28, roughness: 0.38, metalness: 0.05 })
 );
 water.position.y = -0.17;
 world.add(water);
@@ -168,9 +158,7 @@ function paintAt(point, tool) {
   for (let i = 0; i < position.count; i++) {
     const x = position.getX(i);
     const z = position.getZ(i);
-    const dx = x - point.x;
-    const dz = z - point.z;
-    const distance = Math.sqrt(dx * dx + dz * dz);
+    const distance = Math.hypot(x - point.x, z - point.z);
     if (distance > brushRadius) continue;
 
     const falloff = Math.pow(1 - distance / brushRadius, 2);
@@ -240,7 +228,9 @@ function showInfo() {
 function setBrushLock(nextValue) {
   brushLock = nextValue;
   app.dataset.brushLock = brushLock ? 'on' : 'off';
-  brushLockBtn.textContent = brushLock ? '🔓' : '🔒';
+  brushLockBtn.textContent = brushLock ? 'Pincel: continuo' : 'Pincel: toque';
+  brushLockBtn.classList.toggle('is-active', brushLock);
+  if (modeHint) modeHint.textContent = brushLock ? 'Arrastra para pintar' : 'Arrastra para mover cámara';
   controls.enabled = !(mode === 'edit' && brushLock);
 }
 
@@ -290,7 +280,8 @@ modeBtn.addEventListener('click', () => {
   setMode(mode === 'explore' ? 'edit' : 'explore');
 });
 
-brushLockBtn.addEventListener('click', () => {
+brushLockBtn.addEventListener('click', event => {
+  event.stopPropagation();
   setBrushLock(!brushLock);
   showInfo();
 });
