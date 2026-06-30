@@ -7,8 +7,9 @@ const resetBtn = document.querySelector('#resetBtn');
 const modeBtn = document.querySelector('#modeBtn');
 const hideUiBtn = document.querySelector('#hideUiBtn');
 const helpBtn = document.querySelector('#helpBtn');
+const brushLockBtn = document.querySelector('#brushLockBtn');
 const infoPanel = document.querySelector('#infoPanel');
-const tools = document.querySelectorAll('.tool');
+const tools = document.querySelectorAll('.tool[data-tool]');
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xdfe7df);
@@ -46,6 +47,7 @@ const pointer = new THREE.Vector2();
 const pointerPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 let currentTool = 'grass';
 let mode = 'explore';
+let brushLock = false;
 let downAt = null;
 let infoTimer = null;
 
@@ -235,12 +237,21 @@ function showInfo() {
   infoTimer = setTimeout(() => infoPanel.classList.add('is-hidden'), 5200);
 }
 
+function setBrushLock(nextValue) {
+  brushLock = nextValue;
+  app.dataset.brushLock = brushLock ? 'on' : 'off';
+  brushLockBtn.textContent = brushLock ? '🔓' : '🔒';
+  controls.enabled = !(mode === 'edit' && brushLock);
+}
+
 function setMode(nextMode) {
   mode = nextMode;
   app.dataset.mode = mode;
   const editing = mode === 'edit';
   modeBtn.textContent = editing ? 'Editar' : 'Explorar';
   modeBtn.classList.toggle('primary', !editing);
+  if (!editing) setBrushLock(false);
+  else controls.enabled = !brushLock;
   brush.visible = false;
   showInfo();
 }
@@ -251,18 +262,21 @@ function setTool(tool) {
 }
 
 renderer.domElement.addEventListener('pointerdown', event => {
-  downAt = { x: event.clientX, y: event.clientY, point: pickPoint(event) };
+  const point = pickPoint(event);
+  downAt = { x: event.clientX, y: event.clientY, point };
   updateBrush(event);
+  if (mode === 'edit' && brushLock) paintAt(point, currentTool);
 });
 
 renderer.domElement.addEventListener('pointermove', event => {
-  updateBrush(event);
+  const point = updateBrush(event);
+  if (mode === 'edit' && brushLock && downAt && point) paintAt(point, currentTool);
 });
 
 renderer.domElement.addEventListener('pointerup', event => {
   if (!downAt) return;
   const moved = Math.hypot(event.clientX - downAt.x, event.clientY - downAt.y);
-  const shouldPaint = mode === 'edit' && moved <= tapMoveLimit;
+  const shouldPaint = mode === 'edit' && !brushLock && moved <= tapMoveLimit;
   if (shouldPaint) paintAt(downAt.point, currentTool);
   downAt = null;
 });
@@ -274,6 +288,11 @@ renderer.domElement.addEventListener('pointerleave', () => {
 
 modeBtn.addEventListener('click', () => {
   setMode(mode === 'explore' ? 'edit' : 'explore');
+});
+
+brushLockBtn.addEventListener('click', () => {
+  setBrushLock(!brushLock);
+  showInfo();
 });
 
 hideUiBtn.addEventListener('click', () => {
@@ -309,6 +328,7 @@ window.addEventListener('resize', () => {
 
 seedWorld();
 setMode('explore');
+setBrushLock(false);
 
 function animate() {
   controls.update();
