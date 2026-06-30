@@ -1,727 +1,96 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-const app = document.querySelector('#app');
-const viewport = document.querySelector('#viewport');
-const resetBtn = document.querySelector('#resetBtn');
-const modeBtn = document.querySelector('#modeBtn');
-const hideUiBtn = document.querySelector('#hideUiBtn');
-const helpBtn = document.querySelector('#helpBtn');
-const brushLockBtn = document.querySelector('#brushLockBtn');
-const modeHint = document.querySelector('#modeHint');
-const infoPanel = document.querySelector('#infoPanel');
-const undoBtn = document.querySelector('#undoBtn');
-const redoBtn = document.querySelector('#redoBtn');
-const densitySelect = document.querySelector('#densitySelect');
-const tools = document.querySelectorAll('.tool[data-tool]');
-const sizeButtons = document.querySelectorAll('.size-btn');
-
-const STORAGE_KEY = 'storyworlds.v061.autosave';
-const HISTORY_LIMIT = 80;
-const densityCode = { low: 0, normal: 1, high: 2 };
-const densityName = ['low', 'normal', 'high'];
-
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xdfe8e3);
-scene.fog = new THREE.Fog(0xdfe8e3, 28, 96);
-
-const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 180);
-camera.position.set(13, 13, 18);
-
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true;
-viewport.appendChild(renderer.domElement);
-
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.075;
-controls.target.set(0, 0, 0);
-controls.maxPolarAngle = Math.PI * 0.48;
-controls.minDistance = 8;
-controls.maxDistance = 52;
-controls.enablePan = false;
-
-const sky = new THREE.Mesh(
-  new THREE.SphereGeometry(95, 32, 16),
-  new THREE.MeshBasicMaterial({ color: 0xdfe8e3, side: THREE.BackSide })
-);
-scene.add(sky);
-
-const sun = new THREE.DirectionalLight(0xffffff, 2.25);
-sun.position.set(7, 12, 5);
-sun.castShadow = true;
-scene.add(sun);
-scene.add(new THREE.HemisphereLight(0xf4efe5, 0x88917c, 1.8));
-
-const world = new THREE.Group();
-scene.add(world);
-
-const raycaster = new THREE.Raycaster();
-const pointer = new THREE.Vector2();
-const pointerPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-
-let currentTool = 'grass';
-let mode = 'explore';
-let brushLock = false;
-let brushRadius = 2.6;
-let downAt = null;
-let infoTimer = null;
-let decorationTimer = null;
-let saveTimer = null;
-let lastTap = null;
-let density = 'normal';
-let undoStack = [];
-let redoStack = [];
-
-const size = 46;
-const segments = 128;
-const tapMoveLimit = 8;
-const sculptStrength = 0.16;
-const waterLevel = -0.18;
-
-const palette = {
-  grass: new THREE.Color(0xaab486),
-  grass2: new THREE.Color(0xb8c195),
-  water: new THREE.Color(0x8bb5b5),
-  stone: new THREE.Color(0xb7b1a0),
-  earth: new THREE.Color(0xa99f83),
-  shore: new THREE.Color(0xc5b996),
-  darkGrass: new THREE.Color(0x7a8d61)
-};
-
-const terrainGeometry = new THREE.PlaneGeometry(size, size, segments, segments);
-terrainGeometry.rotateX(-Math.PI / 2);
-
-const position = terrainGeometry.attributes.position;
-const colors = [];
-const baseHeights = [];
-const terrainData = [];
-
-for (let i = 0; i < position.count; i++) {
-  const x = position.getX(i);
-  const z = position.getZ(i);
-  const ripple = Math.sin(x * 0.28) * 0.07 + Math.cos(z * 0.30) * 0.06 + Math.sin((x + z) * 0.18) * 0.04;
-  baseHeights[i] = ripple;
-  terrainData[i] = { height: ripple, water: 0, stone: 0, offset: 0, vegetation: 0, density: 1 };
-  const color = palette.grass.clone().lerp(palette.grass2, Math.random() * 0.35);
-  colors.push(color.r, color.g, color.b);
-  position.setY(i, ripple);
-}
-
-terrainGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-terrainGeometry.computeVertexNormals();
-
-const terrain = new THREE.Mesh(
-  terrainGeometry,
-  new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.98, metalness: 0.01, flatShading: false })
-);
-terrain.receiveShadow = true;
-world.add(terrain);
-
-const waterGeometry = new THREE.PlaneGeometry(size, size, 54, 54);
-waterGeometry.rotateX(-Math.PI / 2);
-const water = new THREE.Mesh(
-  waterGeometry,
-  new THREE.MeshStandardMaterial({ color: 0x8bb5b5, transparent: true, opacity: 0.20, roughness: 0.34, metalness: 0.06 })
-);
-water.position.y = waterLevel;
-world.add(water);
-
-const brushMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.42, side: THREE.DoubleSide });
-let brush = createBrush();
-scene.add(brush);
-
-const rocks = new THREE.Group();
-const vegetation = new THREE.Group();
-const waterfalls = new THREE.Group();
-world.add(rocks, vegetation, waterfalls);
-
-const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x8b7555, roughness: 0.95 });
-const leafMaterial = new THREE.MeshStandardMaterial({ color: 0x6f8359, roughness: 0.98 });
-const leafRoundMaterial = new THREE.MeshStandardMaterial({ color: 0x7d935f, roughness: 0.98 });
-const grassMaterial = new THREE.MeshStandardMaterial({ color: 0x667d52, roughness: 0.98 });
-const pebbleMaterial = new THREE.MeshStandardMaterial({ color: 0x9d988b, roughness: 0.96 });
-const waterfallMaterial = new THREE.MeshStandardMaterial({ color: 0x9fd0d3, transparent: true, opacity: 0.46, roughness: 0.25, metalness: 0.03, side: THREE.DoubleSide });
-const foamMaterial = new THREE.MeshBasicMaterial({ color: 0xd8eeee, transparent: true, opacity: 0.42, side: THREE.DoubleSide });
-
-function createBrush() {
-  const mesh = new THREE.Mesh(new THREE.RingGeometry(brushRadius * 0.84, brushRadius, 64), brushMaterial);
-  mesh.rotation.x = -Math.PI / 2;
-  mesh.position.y = 0.12;
-  mesh.visible = false;
-  return mesh;
-}
-
-function rebuildBrush() {
-  scene.remove(brush);
-  brush.geometry.dispose();
-  brush = createBrush();
-  scene.add(brush);
-}
-
-function seededNoise(x, z) {
-  const n = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
-  return n - Math.floor(n);
-}
-
-function pickPoint(event) {
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  raycaster.setFromCamera(pointer, camera);
-  const point = new THREE.Vector3();
-  raycaster.ray.intersectPlane(pointerPlane, point);
-  return point;
-}
-
-function nearestIndex(x, z) {
-  let closest = 0;
-  let best = Infinity;
-  for (let i = 0; i < position.count; i += 2) {
-    const d = (position.getX(i) - x) ** 2 + (position.getZ(i) - z) ** 2;
-    if (d < best) {
-      best = d;
-      closest = i;
-    }
-  }
-  return closest;
-}
-
-function getHeightAt(x, z) {
-  return position.getY(nearestIndex(x, z));
-}
-
-function getSlopeAt(i) {
-  const x = position.getX(i);
-  const z = position.getZ(i);
-  const h = position.getY(i);
-  let maxDelta = 0;
-  for (let j = 0; j < position.count; j += 17) {
-    const d = Math.hypot(position.getX(j) - x, position.getZ(j) - z);
-    if (d > 0.25 && d < 0.95) maxDelta = Math.max(maxDelta, Math.abs(position.getY(j) - h));
-  }
-  return maxDelta;
-}
-
-function clearGroup(group) {
-  for (const child of [...group.children]) {
-    group.remove(child);
-    if (child.children) clearGroup(child);
-    if (child.geometry) child.geometry.dispose();
-  }
-}
-
-function addRock(x, z, scale = 1) {
-  const detail = seededNoise(x, z) > 0.55 ? 0 : 1;
-  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.13 * scale, detail), pebbleMaterial);
-  rock.position.set(x, getHeightAt(x, z) + 0.075 * scale, z);
-  rock.rotation.set(seededNoise(x + 11, z - 3) * 0.7, seededNoise(x, z) * Math.PI * 2, (seededNoise(x - 7, z + 5) - 0.5) * 0.55);
-  rock.scale.set(0.95 + seededNoise(x + 2, z) * 0.65, 0.42 + seededNoise(x, z + 3) * 0.32, 0.72 + seededNoise(x - 1, z) * 0.46);
-  rock.castShadow = true;
-  rocks.add(rock);
-}
-
-function addGrassTuft(x, z, scale = 1) {
-  const tuft = new THREE.Group();
-  const count = 2 + Math.floor(seededNoise(x, z) * 3);
-  for (let i = 0; i < count; i++) {
-    const blade = new THREE.Mesh(new THREE.ConeGeometry(0.026 * scale, 0.18 * scale, 4), grassMaterial);
-    blade.position.set((seededNoise(x + i, z) - 0.5) * 0.20, 0.08 * scale, (seededNoise(x, z + i) - 0.5) * 0.20);
-    blade.rotation.z = (seededNoise(x + i * 2, z) - 0.5) * 0.55;
-    blade.castShadow = true;
-    tuft.add(blade);
-  }
-  tuft.position.set(x, getHeightAt(x, z) + 0.025, z);
-  tuft.rotation.y = seededNoise(x, z) * Math.PI;
-  vegetation.add(tuft);
-}
-
-function addTree(x, z, scale = 1) {
-  const tree = new THREE.Group();
-  const style = seededNoise(x + 10, z - 4);
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.045 * scale, 0.070 * scale, 0.42 * scale, 6), trunkMaterial);
-  trunk.position.y = 0.20 * scale;
-  trunk.castShadow = true;
-  tree.add(trunk);
-
-  if (style > 0.55) {
-    const crown = new THREE.Mesh(new THREE.SphereGeometry(0.31 * scale, 8, 6), leafRoundMaterial);
-    crown.scale.set(1.12, 0.86, 1.0);
-    crown.position.y = 0.66 * scale;
-    crown.castShadow = true;
-    tree.add(crown);
-  } else {
-    const crown = new THREE.Mesh(new THREE.ConeGeometry(0.29 * scale, 0.78 * scale, 7), leafMaterial);
-    crown.position.y = 0.68 * scale;
-    crown.castShadow = true;
-    tree.add(crown);
-  }
-
-  tree.position.set(x, getHeightAt(x, z) + 0.02, z);
-  tree.rotation.y = seededNoise(x, z) * Math.PI * 2;
-  vegetation.add(tree);
-}
-
-function addWaterfall(point) {
-  const x = point.x;
-  const z = point.z;
-  const top = getHeightAt(x, z) + 0.05;
-  const bottom = Math.max(waterLevel + 0.04, top - 1.15);
-  const height = Math.max(0.28, top - bottom);
-  const group = new THREE.Group();
-  const angle = seededNoise(x, z) * Math.PI * 2;
-
-  for (let i = 0; i < 3; i++) {
-    const strip = new THREE.Mesh(new THREE.PlaneGeometry(0.20 + i * 0.06, height, 1, 8), waterfallMaterial.clone());
-    strip.position.set((i - 1) * 0.12, 0, 0.01 * i);
-    strip.rotation.z = (i - 1) * 0.06;
-    group.add(strip);
-  }
-
-  const foam = new THREE.Mesh(new THREE.CircleGeometry(0.42, 20), foamMaterial);
-  foam.rotation.x = -Math.PI / 2;
-  foam.position.y = -height / 2 + 0.02;
-  group.add(foam);
-
-  group.position.set(x, bottom + height / 2, z);
-  group.rotation.y = angle;
-  group.userData.storyWorld = { type: 'waterfall', x, z };
-  waterfalls.add(group);
-}
-
-function updateColorAt(i) {
-  const x = position.getX(i);
-  const z = position.getZ(i);
-  const data = terrainData[i];
-  const baseGreen = palette.grass.clone().lerp(palette.grass2, Math.sin(x * 0.5 + z * 0.3) * 0.12 + 0.25);
-  const shoreAmount = THREE.MathUtils.clamp(data.water * 1.4 + (1 - data.water) * Math.max(0, 0.18 - Math.abs(data.height - waterLevel)) * 2.2, 0, 0.7);
-  const relief = THREE.MathUtils.clamp(Math.abs(data.offset) * 0.22, 0, 0.32);
-  const veg = THREE.MathUtils.clamp(data.vegetation * 0.18, 0, 0.18);
-  const color = baseGreen
-    .lerp(palette.darkGrass, veg)
-    .lerp(palette.earth, relief)
-    .lerp(palette.shore, shoreAmount * (1 - data.water))
-    .lerp(palette.water, data.water * 0.78)
-    .lerp(palette.stone, data.stone * 0.9);
-  terrainGeometry.attributes.color.setXYZ(i, color.r, color.g, color.b);
-}
-
-function applyHeight(i) {
-  const data = terrainData[i];
-  data.height = baseHeights[i] + data.offset - data.water * 0.30 + data.stone * 0.28;
-  position.setY(i, data.height);
-}
-
-function brushIndexes(point) {
-  const indexes = [];
-  for (let i = 0; i < position.count; i++) {
-    const distance = Math.hypot(position.getX(i) - point.x, position.getZ(i) - point.z);
-    if (distance <= brushRadius) indexes.push({ i, distance });
-  }
-  return indexes;
-}
-
-function sampleAverageOffset(point) {
-  const indexes = brushIndexes(point);
-  if (!indexes.length) return 0;
-  return indexes.reduce((sum, item) => sum + terrainData[item.i].offset, 0) / indexes.length;
-}
-
-function sampleCenterOffset(point) {
-  return terrainData[nearestIndex(point.x, point.z)].offset;
-}
-
-function naturalRelax(point, strength = 0.10) {
-  const averageOffset = sampleAverageOffset(point);
-  for (const { i, distance } of brushIndexes(point)) {
-    const falloff = Math.pow(1 - distance / brushRadius, 2.2);
-    const data = terrainData[i];
-    data.offset = THREE.MathUtils.lerp(data.offset, averageOffset, falloff * strength);
-    applyHeight(i);
-    updateColorAt(i);
-  }
-}
-
-function makeSnapshot() {
-  return {
-    density,
-    terrain: terrainData.map(d => [d.water, d.stone, d.offset, d.vegetation, d.density ?? 1]),
-    waterfalls: waterfalls.children.map(fall => fall.userData.storyWorld).filter(Boolean)
-  };
-}
-
-function applySnapshot(snapshot) {
-  if (!snapshot || !Array.isArray(snapshot.terrain)) return;
-  density = snapshot.density || 'normal';
-  if (densitySelect) densitySelect.value = density;
-  snapshot.terrain.forEach((row, i) => {
-    if (!terrainData[i]) return;
-    terrainData[i].water = row[0] || 0;
-    terrainData[i].stone = row[1] || 0;
-    terrainData[i].offset = row[2] || 0;
-    terrainData[i].vegetation = row[3] || 0;
-    terrainData[i].density = row[4] ?? 1;
-    applyHeight(i);
-    updateColorAt(i);
-  });
-  clearGroup(waterfalls);
-  (snapshot.waterfalls || []).forEach(item => addWaterfall(new THREE.Vector3(item.x, 0, item.z)));
-  position.needsUpdate = true;
-  terrainGeometry.attributes.color.needsUpdate = true;
-  terrainGeometry.computeVertexNormals();
-  refreshDecorations();
-}
-
-function pushHistory() {
-  undoStack.push(makeSnapshot());
-  if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
-  redoStack = [];
-}
-
-function undo() {
-  if (!undoStack.length) return;
-  redoStack.push(makeSnapshot());
-  applySnapshot(undoStack.pop());
-  scheduleSave();
-}
-
-function redo() {
-  if (!redoStack.length) return;
-  undoStack.push(makeSnapshot());
-  applySnapshot(redoStack.pop());
-  scheduleSave();
-}
-
-function scheduleSave() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(makeSnapshot())); } catch {}
-  }, 250);
-}
-
-function loadSavedWorld() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return false;
-    applySnapshot(JSON.parse(raw));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function paintAt(point, tool, options = {}) {
-  if (!options.skipHistory) pushHistory();
-
-  if (tool === 'waterfall') {
-    addWaterfall(point);
-    scheduleSave();
-    return;
-  }
-
-  let changed = false;
-  const averageOffset = tool === 'smooth' ? sampleAverageOffset(point) : 0;
-  const centerOffset = tool === 'flatten' ? sampleCenterOffset(point) : 0;
-  const activeDensity = densityCode[density] ?? 1;
-
-  for (let i = 0; i < position.count; i++) {
-    const x = position.getX(i);
-    const z = position.getZ(i);
-    const distance = Math.hypot(x - point.x, z - point.z);
-    if (distance > brushRadius) continue;
-
-    const falloff = Math.pow(1 - distance / brushRadius, 2.25);
-    const data = terrainData[i];
-    data.density = activeDensity;
-
-    if (tool === 'water') {
-      data.water = THREE.MathUtils.clamp(data.water + falloff * 0.20, 0, 1);
-      data.stone = THREE.MathUtils.clamp(data.stone - falloff * 0.10, 0, 1);
-      data.vegetation = THREE.MathUtils.clamp(data.vegetation - falloff * 0.16, 0, 1);
-      data.offset = THREE.MathUtils.clamp(data.offset - falloff * 0.04, -1.8, 2.4);
-    } else if (tool === 'forest') {
-      data.vegetation = THREE.MathUtils.clamp(data.vegetation + falloff * 0.34, 0, 1);
-      data.water = THREE.MathUtils.clamp(data.water - falloff * 0.08, 0, 1);
-      data.stone = THREE.MathUtils.clamp(data.stone - falloff * 0.04, 0, 1);
-    } else if (tool === 'stone') {
-      data.stone = THREE.MathUtils.clamp(data.stone + falloff * 0.18, 0, 1);
-      data.water = THREE.MathUtils.clamp(data.water - falloff * 0.10, 0, 1);
-      data.vegetation = THREE.MathUtils.clamp(data.vegetation - falloff * 0.05, 0, 1);
-      data.offset = THREE.MathUtils.clamp(data.offset + falloff * 0.018, -1.8, 2.4);
-    } else if (tool === 'raise') {
-      data.offset = THREE.MathUtils.clamp(data.offset + falloff * sculptStrength, -1.8, 2.4);
-      data.water = THREE.MathUtils.clamp(data.water - falloff * 0.08, 0, 1);
-    } else if (tool === 'lower') {
-      data.offset = THREE.MathUtils.clamp(data.offset - falloff * sculptStrength, -1.8, 2.4);
-      data.water = THREE.MathUtils.clamp(data.water + falloff * 0.015, 0, 1);
-    } else if (tool === 'smooth') {
-      data.offset = THREE.MathUtils.lerp(data.offset, averageOffset, falloff * 0.22);
-    } else if (tool === 'flatten') {
-      data.offset = THREE.MathUtils.lerp(data.offset, centerOffset, falloff * 0.42);
-    } else if (tool === 'erase') {
-      data.water = THREE.MathUtils.clamp(data.water - falloff * 0.22, 0, 1);
-      data.stone = THREE.MathUtils.clamp(data.stone - falloff * 0.22, 0, 1);
-      data.vegetation = THREE.MathUtils.clamp(data.vegetation - falloff * 0.32, 0, 1);
-      data.offset = THREE.MathUtils.lerp(data.offset, 0, falloff * 0.16);
-    } else {
-      data.water = THREE.MathUtils.clamp(data.water - falloff * 0.18, 0, 1);
-      data.stone = THREE.MathUtils.clamp(data.stone - falloff * 0.12, 0, 1);
-      data.vegetation = THREE.MathUtils.clamp(data.vegetation + falloff * 0.06, 0, 1);
-    }
-
-    applyHeight(i);
-    updateColorAt(i);
-    changed = true;
-  }
-
-  if (tool === 'raise' || tool === 'lower' || tool === 'water' || tool === 'stone') naturalRelax(point, 0.07);
-
-  if (changed) {
-    position.needsUpdate = true;
-    terrainGeometry.attributes.color.needsUpdate = true;
-    terrainGeometry.computeVertexNormals();
-    scheduleDecorations();
-    scheduleSave();
-  }
-}
-
-function densityRulesFor(code) {
-  if (code === 0) return { grass: 0.79, tree: 0.92, rock: 0.985, stride: 3 };
-  if (code === 2) return { grass: 0.44, tree: 0.73, rock: 0.955, stride: 1 };
-  return { grass: 0.61, tree: 0.82, rock: 0.975, stride: 2 };
-}
-
-function refreshDecorations() {
-  clearGroup(vegetation);
-  clearGroup(rocks);
-
-  for (let i = 0; i < position.count; i += 19) {
-    const x = position.getX(i);
-    const z = position.getZ(i);
-    if (Math.abs(x) > size * 0.48 || Math.abs(z) > size * 0.48) continue;
-
-    const data = terrainData[i];
-    const rules = densityRulesFor(data.density ?? 1);
-    if ((i / 19) % rules.stride !== 0) continue;
-
-    const n = seededNoise(x * 1.7, z * 1.7);
-    const slope = getSlopeAt(i);
-    const shore = data.water > 0.18 || Math.abs(data.height - waterLevel) < 0.18;
-
-    if (data.water < 0.18 && data.vegetation > 0.25 && slope < 0.30 && n > rules.grass) {
-      const scale = 0.65 + seededNoise(x + 4, z - 2) * 0.52;
-      if (data.vegetation > 0.66 && n > rules.tree) addTree(x, z, scale);
-      else addGrassTuft(x, z, scale);
-    }
-
-    if (data.water < 0.25 && (data.stone > 0.58 || slope > 0.74 || (shore && n > rules.rock))) {
-      const rx = x + (n - 0.5) * 0.50;
-      const rz = z + (seededNoise(z, x) - 0.5) * 0.50;
-      addRock(rx, rz, 0.22 + n * 0.30);
-    }
-  }
-}
-
-function scheduleDecorations() {
-  clearTimeout(decorationTimer);
-  decorationTimer = setTimeout(refreshDecorations, 180);
-}
-
-function seedWorld() {
-  paintAt(new THREE.Vector3(0, 0, 0), 'water', { skipHistory: true });
-  paintAt(new THREE.Vector3(1.5, 0, -0.5), 'water', { skipHistory: true });
-  paintAt(new THREE.Vector3(-1.2, 0, 0.9), 'water', { skipHistory: true });
-  paintAt(new THREE.Vector3(4.2, 0, 2.5), 'stone', { skipHistory: true });
-  paintAt(new THREE.Vector3(4.8, 0, 2.1), 'stone', { skipHistory: true });
-  paintAt(new THREE.Vector3(-5, 0, -3), 'stone', { skipHistory: true });
-  paintAt(new THREE.Vector3(-3.8, 0, 2.5), 'raise', { skipHistory: true });
-  paintAt(new THREE.Vector3(-4.5, 0, -4), 'forest', { skipHistory: true });
-  paintAt(new THREE.Vector3(-5.2, 0, -3.6), 'forest', { skipHistory: true });
-  refreshDecorations();
-}
-
-function updateBrush(event) {
-  if (mode !== 'edit') {
-    brush.visible = false;
-    return null;
-  }
-  const point = pickPoint(event);
-  brush.position.x = point.x;
-  brush.position.z = point.z;
-  brush.visible = true;
-  return point;
-}
-
-function showInfo() {
-  infoPanel.classList.remove('is-hidden');
-  clearTimeout(infoTimer);
-  infoTimer = setTimeout(() => infoPanel.classList.add('is-hidden'), 5200);
-}
-
-function resetCamera() {
-  controls.target.set(0, 0, 0);
-  camera.position.set(13, 13, 18);
-  controls.update();
-}
-
-function setBrushLock(nextValue) {
-  brushLock = nextValue;
-  app.dataset.brushLock = brushLock ? 'on' : 'off';
-  brushLockBtn.textContent = brushLock ? 'Pincel: continuo' : 'Pincel: toque';
-  brushLockBtn.classList.toggle('is-active', brushLock);
-  if (modeHint) modeHint.textContent = brushLock ? 'Arrastra para pintar' : 'Arrastra para mover cámara';
-  controls.enabled = !(mode === 'edit' && brushLock);
-}
-
-function setMode(nextMode) {
-  mode = nextMode;
-  app.dataset.mode = mode;
-  const editing = mode === 'edit';
-  modeBtn.textContent = editing ? 'Editar' : 'Explorar';
-  modeBtn.classList.toggle('primary', !editing);
-  if (!editing) setBrushLock(false);
-  else controls.enabled = !brushLock;
-  brush.visible = false;
-  showInfo();
-}
-
-function setTool(tool) {
-  currentTool = tool;
-  tools.forEach(button => button.classList.toggle('active', button.dataset.tool === tool));
-}
-
-function setBrushSize(sizeName) {
-  const sizes = { small: 1.25, medium: 2.6, large: 4.8 };
-  brushRadius = sizes[sizeName] ?? sizes.medium;
-  sizeButtons.forEach(button => button.classList.toggle('active', button.dataset.size === sizeName));
-  rebuildBrush();
-}
-
-function bindPress(element, handler) {
-  element?.addEventListener('pointerdown', event => {
-    event.preventDefault();
-    event.stopPropagation();
-  });
-  element?.addEventListener('pointerup', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    handler(event);
-  });
-  element?.addEventListener('click', event => {
-    event.preventDefault();
-    event.stopPropagation();
-  });
-}
-
-renderer.domElement.addEventListener('pointerdown', event => {
-  const point = pickPoint(event);
-  downAt = { x: event.clientX, y: event.clientY, point, time: performance.now(), historySaved: false };
-  updateBrush(event);
-  if (mode === 'edit' && brushLock) {
-    pushHistory();
-    downAt.historySaved = true;
-    paintAt(point, currentTool, { skipHistory: true });
-  }
-});
-
-renderer.domElement.addEventListener('pointermove', event => {
-  const point = updateBrush(event);
-  if (mode === 'edit' && brushLock && downAt && point) paintAt(point, currentTool, { skipHistory: true });
-});
-
-renderer.domElement.addEventListener('pointerup', event => {
-  if (!downAt) return;
-  const moved = Math.hypot(event.clientX - downAt.x, event.clientY - downAt.y);
-  const now = performance.now();
-
-  if (mode === 'edit' && !brushLock && moved <= tapMoveLimit) paintAt(downAt.point, currentTool);
-  if (mode === 'edit' && brushLock && downAt.historySaved) scheduleSave();
-
-  if (mode === 'explore' && moved <= tapMoveLimit) {
-    const sameSpot = lastTap ? Math.hypot(event.clientX - lastTap.x, event.clientY - lastTap.y) < 34 : false;
-    if (lastTap && sameSpot && now - lastTap.time < 340) {
-      resetCamera();
-      lastTap = null;
-    } else {
-      lastTap = { x: event.clientX, y: event.clientY, time: now };
-    }
-  }
-
-  downAt = null;
-});
-
-renderer.domElement.addEventListener('pointerleave', () => {
-  downAt = null;
-  brush.visible = false;
-});
-
-renderer.domElement.addEventListener('dblclick', resetCamera);
-
-bindPress(modeBtn, () => setMode(mode === 'explore' ? 'edit' : 'explore'));
-bindPress(brushLockBtn, () => {
-  setBrushLock(!brushLock);
-  showInfo();
-});
-bindPress(hideUiBtn, () => {
-  app.classList.toggle('ui-hidden');
-  hideUiBtn.textContent = app.classList.contains('ui-hidden') ? '☰' : '👁️';
-});
-bindPress(helpBtn, showInfo);
-bindPress(undoBtn, undo);
-bindPress(redoBtn, redo);
-tools.forEach(button => bindPress(button, () => setTool(button.dataset.tool)));
-sizeButtons.forEach(button => bindPress(button, () => setBrushSize(button.dataset.size)));
-
-densitySelect?.addEventListener('change', event => {
-  density = event.target.value;
-  scheduleSave();
-});
-
-bindPress(resetBtn, () => {
-  pushHistory();
-  clearGroup(vegetation);
-  clearGroup(rocks);
-  clearGroup(waterfalls);
-  for (let i = 0; i < position.count; i++) {
-    terrainData[i] = { height: baseHeights[i], water: 0, stone: 0, offset: 0, vegetation: 0, density: densityCode[density] ?? 1 };
-    position.setY(i, baseHeights[i]);
-    updateColorAt(i);
-  }
-  position.needsUpdate = true;
-  terrainGeometry.attributes.color.needsUpdate = true;
-  terrainGeometry.computeVertexNormals();
-  seedWorld();
-  scheduleSave();
-});
-
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
-
-if (!loadSavedWorld()) {
-  seedWorld();
-  scheduleSave();
-}
-setMode('explore');
-setBrushLock(false);
-setBrushSize('medium');
-
-function animate() {
-  controls.update();
-  const t = performance.now() * 0.0015;
-  water.material.opacity = 0.20 + Math.sin(t) * 0.024;
-  water.position.y = waterLevel + Math.sin(t * 0.8) * 0.01;
-  waterfalls.children.forEach((fall, index) => {
-    fall.children.forEach(child => {
-      if (child.material && 'opacity' in child.material) child.material.opacity = 0.42 + Math.sin(t * 3 + index) * 0.04;
-    });
-  });
-  renderer.render(scene, camera);
-  requestAnimationFrame(animate);
-}
-
+const $ = s => document.querySelector(s);
+const app=$('#app'), viewport=$('#viewport'), resetBtn=$('#resetBtn'), seedBtn=$('#seedBtn'), modeBtn=$('#modeBtn'), hideUiBtn=$('#hideUiBtn'), helpBtn=$('#helpBtn'), brushLockBtn=$('#brushLockBtn'), modeHint=$('#modeHint'), infoPanel=$('#infoPanel'), undoBtn=$('#undoBtn'), redoBtn=$('#redoBtn'), densitySelect=$('#densitySelect');
+const tools=[...document.querySelectorAll('.tool[data-tool]')], sizeButtons=[...document.querySelectorAll('.size-btn')];
+const STORAGE_KEY='storyworlds.v062.autosave', HISTORY_LIMIT=80, densityCode={low:0,normal:1,high:2};
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0xdbe7e5);
+scene.fog=new THREE.Fog(0xdbe7e5,34,110);
+const camera=new THREE.PerspectiveCamera(42,innerWidth/innerHeight,.1,220); camera.position.set(14,14,20);
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setSize(innerWidth,innerHeight); renderer.shadowMap.enabled=true; viewport.appendChild(renderer.domElement);
+const controls=new OrbitControls(camera,renderer.domElement);
+Object.assign(controls,{enableDamping:true,dampingFactor:.075,maxPolarAngle:Math.PI*.49,minDistance:8,maxDistance:62,enablePan:false}); controls.target.set(0,0,0);
+
+scene.add(new THREE.HemisphereLight(0xf8efe0,0x7f8c76,1.8));
+const sun=new THREE.DirectionalLight(0xffffff,2.28); sun.position.set(9,15,7); sun.castShadow=true; scene.add(sun);
+const sky=new THREE.Mesh(new THREE.SphereGeometry(130,32,16),new THREE.MeshBasicMaterial({color:0xdbe7e5,side:THREE.BackSide})); scene.add(sky);
+const cloudGroup=new THREE.Group(); scene.add(cloudGroup);
+const cloudMat=new THREE.MeshBasicMaterial({color:0xf7f5ec,transparent:true,opacity:.48});
+function addCloud(x,y,z,s){const c=new THREE.Group(); for(let i=0;i<4;i++){const p=new THREE.Mesh(new THREE.SphereGeometry(s*(.5+i*.08),10,6),cloudMat); p.scale.set(1.8,.42,.75); p.position.set(i*s*.62,Math.sin(i)*s*.08,Math.cos(i)*s*.10); c.add(p)} c.position.set(x,y,z); c.rotation.y=Math.random()*Math.PI; cloudGroup.add(c)}
+addCloud(-18,13,-16,1.2); addCloud(7,15,-20,1.6); addCloud(22,14,4,1.1); addCloud(-26,16,12,1.4);
+
+const world=new THREE.Group(); scene.add(world);
+const raycaster=new THREE.Raycaster(), pointer=new THREE.Vector2(), pointerPlane=new THREE.Plane(new THREE.Vector3(0,1,0),0);
+let currentTool='grass', mode='explore', brushLock=false, brushRadius=2.6, downAt=null, infoTimer=null, decorationTimer=null, saveTimer=null, lastTap=null, density='normal', seedSalt=1207;
+let undoStack=[], redoStack=[];
+const size=46, segments=128, tapMoveLimit=8, sculptStrength=.16, waterLevel=-.18;
+const palette={grass:new THREE.Color(0xaab486),grass2:new THREE.Color(0xb8c195),water:new THREE.Color(0x8bb5b5),stone:new THREE.Color(0xb7b1a0),earth:new THREE.Color(0xa99f83),shore:new THREE.Color(0xc5b996),darkGrass:new THREE.Color(0x7a8d61)};
+
+const terrainGeometry=new THREE.PlaneGeometry(size,size,segments,segments); terrainGeometry.rotateX(-Math.PI/2);
+const position=terrainGeometry.attributes.position, colors=[], baseHeights=[], terrainData=[];
+for(let i=0;i<position.count;i++){const x=position.getX(i),z=position.getZ(i),r=Math.sin(x*.28)*.07+Math.cos(z*.30)*.06+Math.sin((x+z)*.18)*.04; baseHeights[i]=r; terrainData[i]={height:r,water:0,stone:0,offset:0,vegetation:0,density:1}; const c=palette.grass.clone().lerp(palette.grass2,Math.random()*.35); colors.push(c.r,c.g,c.b); position.setY(i,r)}
+terrainGeometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3)); terrainGeometry.computeVertexNormals();
+const terrain=new THREE.Mesh(terrainGeometry,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.98,metalness:.01,flatShading:false})); terrain.receiveShadow=true; world.add(terrain);
+const waterGeometry=new THREE.PlaneGeometry(size,size,54,54); waterGeometry.rotateX(-Math.PI/2);
+const water=new THREE.Mesh(waterGeometry,new THREE.MeshStandardMaterial({color:0x8bb5b5,transparent:true,opacity:.2,roughness:.34,metalness:.06})); water.position.y=waterLevel; world.add(water);
+
+const brushMaterial=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.42,side:THREE.DoubleSide}); let brush=createBrush(); scene.add(brush);
+const rocks=new THREE.Group(), vegetation=new THREE.Group(), waterfalls=new THREE.Group(); world.add(rocks,vegetation,waterfalls);
+const trunkMaterial=new THREE.MeshStandardMaterial({color:0x8b7555,roughness:.95}), leafMaterial=new THREE.MeshStandardMaterial({color:0x6f8359,roughness:.98}), leafRoundMaterial=new THREE.MeshStandardMaterial({color:0x7d935f,roughness:.98}), grassMaterial=new THREE.MeshStandardMaterial({color:0x667d52,roughness:.98}), pebbleMaterial=new THREE.MeshStandardMaterial({color:0x9d988b,roughness:.96}), waterfallMaterial=new THREE.MeshStandardMaterial({color:0x9fd0d3,transparent:true,opacity:.46,roughness:.25,metalness:.03,side:THREE.DoubleSide}), foamMaterial=new THREE.MeshBasicMaterial({color:0xd8eeee,transparent:true,opacity:.42,side:THREE.DoubleSide});
+
+function createBrush(){const m=new THREE.Mesh(new THREE.RingGeometry(brushRadius*.84,brushRadius,64),brushMaterial); m.rotation.x=-Math.PI/2; m.position.y=.12; m.visible=false; return m}
+function rebuildBrush(){scene.remove(brush); brush.geometry.dispose(); brush=createBrush(); scene.add(brush)}
+function seededNoise(x,z,s=seedSalt){const n=Math.sin((x+s*.013)*12.9898+(z-s*.017)*78.233)*43758.5453; return n-Math.floor(n)}
+function pickPoint(e){const r=renderer.domElement.getBoundingClientRect(); pointer.x=((e.clientX-r.left)/r.width)*2-1; pointer.y=-((e.clientY-r.top)/r.height)*2+1; raycaster.setFromCamera(pointer,camera); const p=new THREE.Vector3(); raycaster.ray.intersectPlane(pointerPlane,p); return p}
+function nearestIndex(x,z){let c=0,b=Infinity; for(let i=0;i<position.count;i+=2){const d=(position.getX(i)-x)**2+(position.getZ(i)-z)**2; if(d<b){b=d;c=i}} return c}
+function getHeightAt(x,z){return position.getY(nearestIndex(x,z))}
+function getSlopeAt(i){const x=position.getX(i),z=position.getZ(i),h=position.getY(i); let m=0; for(let j=0;j<position.count;j+=17){const d=Math.hypot(position.getX(j)-x,position.getZ(j)-z); if(d>.25&&d<.95)m=Math.max(m,Math.abs(position.getY(j)-h))} return m}
+function clearGroup(g){for(const child of [...g.children]){g.remove(child); if(child.children)clearGroup(child); if(child.geometry)child.geometry.dispose()}}
+function addRock(x,z,scale=1){const detail=seededNoise(x,z)>.55?0:1; const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(.13*scale,detail),pebbleMaterial); rock.position.set(x,getHeightAt(x,z)+.075*scale,z); rock.rotation.set(seededNoise(x+11,z-3)*.7,seededNoise(x,z)*Math.PI*2,(seededNoise(x-7,z+5)-.5)*.55); rock.scale.set(.95+seededNoise(x+2,z)*.65,.42+seededNoise(x,z+3)*.32,.72+seededNoise(x-1,z)*.46); rock.castShadow=true; rocks.add(rock)}
+function addGrassTuft(x,z,scale=1){const tuft=new THREE.Group(), count=2+Math.floor(seededNoise(x,z)*3); for(let i=0;i<count;i++){const blade=new THREE.Mesh(new THREE.ConeGeometry(.026*scale,.18*scale,4),grassMaterial); blade.position.set((seededNoise(x+i,z)-.5)*.20,.08*scale,(seededNoise(x,z+i)-.5)*.20); blade.rotation.z=(seededNoise(x+i*2,z)-.5)*.55; blade.castShadow=true; tuft.add(blade)} tuft.position.set(x,getHeightAt(x,z)+.025,z); tuft.rotation.y=seededNoise(x,z)*Math.PI; vegetation.add(tuft)}
+function addTree(x,z,scale=1){const tree=new THREE.Group(), style=seededNoise(x+10,z-4); const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.045*scale,.070*scale,.42*scale,6),trunkMaterial); trunk.position.y=.20*scale; trunk.castShadow=true; tree.add(trunk); let crown; if(style>.55){crown=new THREE.Mesh(new THREE.SphereGeometry(.31*scale,8,6),leafRoundMaterial); crown.scale.set(1.12,.86,1); crown.position.y=.66*scale}else{crown=new THREE.Mesh(new THREE.ConeGeometry(.29*scale,.78*scale,7),leafMaterial); crown.position.y=.68*scale} crown.castShadow=true; tree.add(crown); tree.position.set(x,getHeightAt(x,z)+.02,z); tree.rotation.y=seededNoise(x,z)*Math.PI*2; vegetation.add(tree)}
+function addWaterfall(point){const x=point.x,z=point.z,top=getHeightAt(x,z)+.05,bottom=Math.max(waterLevel+.04,top-1.15),height=Math.max(.28,top-bottom); const group=new THREE.Group(), angle=seededNoise(x,z)*Math.PI*2; for(let i=0;i<3;i++){const strip=new THREE.Mesh(new THREE.PlaneGeometry(.20+i*.06,height,1,8),waterfallMaterial.clone()); strip.position.set((i-1)*.12,0,.01*i); strip.rotation.z=(i-1)*.06; group.add(strip)} const foam=new THREE.Mesh(new THREE.CircleGeometry(.42,20),foamMaterial); foam.rotation.x=-Math.PI/2; foam.position.y=-height/2+.02; group.add(foam); group.position.set(x,bottom+height/2,z); group.rotation.y=angle; group.userData.storyWorld={type:'waterfall',x,z}; waterfalls.add(group)}
+function updateColorAt(i){const x=position.getX(i),z=position.getZ(i),d=terrainData[i]; const base=palette.grass.clone().lerp(palette.grass2,Math.sin(x*.5+z*.3)*.12+.25), shore=THREE.MathUtils.clamp(d.water*1.4+(1-d.water)*Math.max(0,.18-Math.abs(d.height-waterLevel))*2.2,0,.7), relief=THREE.MathUtils.clamp(Math.abs(d.offset)*.22,0,.32), veg=THREE.MathUtils.clamp(d.vegetation*.18,0,.18); const c=base.lerp(palette.darkGrass,veg).lerp(palette.earth,relief).lerp(palette.shore,shore*(1-d.water)).lerp(palette.water,d.water*.78).lerp(palette.stone,d.stone*.9); terrainGeometry.attributes.color.setXYZ(i,c.r,c.g,c.b)}
+function applyHeight(i){const d=terrainData[i]; d.height=baseHeights[i]+d.offset-d.water*.30+d.stone*.28; position.setY(i,d.height)}
+function brushIndexes(p){const a=[]; for(let i=0;i<position.count;i++){const dist=Math.hypot(position.getX(i)-p.x,position.getZ(i)-p.z); if(dist<=brushRadius)a.push({i,dist})} return a}
+function sampleAverageOffset(p){const a=brushIndexes(p); return a.length?a.reduce((s,o)=>s+terrainData[o.i].offset,0)/a.length:0}
+function sampleCenterOffset(p){return terrainData[nearestIndex(p.x,p.z)].offset}
+function naturalRelax(p,str=.10){const avg=sampleAverageOffset(p); for(const {i,dist} of brushIndexes(p)){const f=Math.pow(1-dist/brushRadius,2.2),d=terrainData[i]; d.offset=THREE.MathUtils.lerp(d.offset,avg,f*str); applyHeight(i); updateColorAt(i)}}
+function gaussian(x,z,cx,cz,r,h){const d=((x-cx)**2+(z-cz)**2)/(r*r); return Math.exp(-d)*h}
+function makeSnapshot(){return {density,seedSalt,terrain:terrainData.map(d=>[d.water,d.stone,d.offset,d.vegetation,d.density??1]),waterfalls:waterfalls.children.map(f=>f.userData.storyWorld).filter(Boolean)}}
+function applySnapshot(s){if(!s||!Array.isArray(s.terrain))return; density=s.density||'normal'; seedSalt=s.seedSalt||seedSalt; if(densitySelect)densitySelect.value=density; s.terrain.forEach((row,i)=>{if(!terrainData[i])return; terrainData[i].water=row[0]||0; terrainData[i].stone=row[1]||0; terrainData[i].offset=row[2]||0; terrainData[i].vegetation=row[3]||0; terrainData[i].density=row[4]??1; applyHeight(i); updateColorAt(i)}); clearGroup(waterfalls); (s.waterfalls||[]).forEach(item=>addWaterfall(new THREE.Vector3(item.x,0,item.z))); position.needsUpdate=true; terrainGeometry.attributes.color.needsUpdate=true; terrainGeometry.computeVertexNormals(); refreshDecorations()}
+function pushHistory(){undoStack.push(makeSnapshot()); if(undoStack.length>HISTORY_LIMIT)undoStack.shift(); redoStack=[]}
+function undo(){if(!undoStack.length)return; redoStack.push(makeSnapshot()); applySnapshot(undoStack.pop()); scheduleSave()}
+function redo(){if(!redoStack.length)return; undoStack.push(makeSnapshot()); applySnapshot(redoStack.pop()); scheduleSave()}
+function scheduleSave(){clearTimeout(saveTimer); saveTimer=setTimeout(()=>{try{localStorage.setItem(STORAGE_KEY,JSON.stringify(makeSnapshot()))}catch{}},250)}
+function loadSavedWorld(){try{const raw=localStorage.getItem(STORAGE_KEY); if(!raw)return false; applySnapshot(JSON.parse(raw)); return true}catch{return false}}
+function clearWorld(){clearGroup(vegetation); clearGroup(rocks); clearGroup(waterfalls); for(let i=0;i<position.count;i++){terrainData[i]={height:baseHeights[i],water:0,stone:0,offset:0,vegetation:0,density:densityCode[density]??1}; position.setY(i,baseHeights[i]); updateColorAt(i)}}
+function generateSeedWorld(newSeed=Math.floor(Math.random()*999999)){seedSalt=newSeed; clearWorld(); const riverShift=(seededNoise(2,3)-.5)*5, lakeX=(seededNoise(7,9)-.5)*7, lakeZ=(seededNoise(9,7)-.5)*7; for(let i=0;i<position.count;i++){const x=position.getX(i), z=position.getZ(i), d=terrainData[i]; let h=0; h+=gaussian(x,z,-10+seededNoise(1,1)*5,-8+seededNoise(2,2)*5,9,1.15); h+=gaussian(x,z,9-seededNoise(3,4)*4,8-seededNoise(4,3)*5,8,1.05); h+=gaussian(x,z,0,12,11,.55); h-=gaussian(x,z,lakeX,lakeZ,5.8,.78); const river=Math.abs(x-(Math.sin(z*.22+seedSalt*.01)*3.2+riverShift)); const riverMask=Math.max(0,1-river/2.2); h-=riverMask*.52; d.offset=h; const lake=Math.hypot(x-lakeX,z-lakeZ); d.water=THREE.MathUtils.clamp((6.2-lake)/3.6,0,1); d.water=Math.max(d.water,THREE.MathUtils.clamp(riverMask*.85,0,1)); d.vegetation=THREE.MathUtils.clamp(.22+seededNoise(x*.5,z*.5)*.32+gaussian(x,z,-12,8,8,.55),0,1); d.stone=THREE.MathUtils.clamp((Math.abs(h)-.7)*.45+seededNoise(x*1.8,z*1.8)*.10,0,.62); d.density=densityCode[density]??1; applyHeight(i); updateColorAt(i)} position.needsUpdate=true; terrainGeometry.attributes.color.needsUpdate=true; terrainGeometry.computeVertexNormals(); addWaterfall(new THREE.Vector3(-2+seededNoise(5,6)*4,0,7+seededNoise(6,5)*4)); refreshDecorations(); resetCamera(); scheduleSave(); showInfo()}
+function paintAt(p,tool,opt={}){if(!opt.skipHistory)pushHistory(); if(tool==='waterfall'){addWaterfall(p); scheduleSave(); return} let changed=false; const avg=tool==='smooth'?sampleAverageOffset(p):0, ctr=tool==='flatten'?sampleCenterOffset(p):0, activeDensity=densityCode[density]??1; for(let i=0;i<position.count;i++){const x=position.getX(i),z=position.getZ(i),dist=Math.hypot(x-p.x,z-p.z); if(dist>brushRadius)continue; const f=Math.pow(1-dist/brushRadius,2.25),d=terrainData[i]; d.density=activeDensity; if(tool==='water'){d.water=THREE.MathUtils.clamp(d.water+f*.20,0,1);d.stone=THREE.MathUtils.clamp(d.stone-f*.10,0,1);d.vegetation=THREE.MathUtils.clamp(d.vegetation-f*.16,0,1);d.offset=THREE.MathUtils.clamp(d.offset-f*.04,-1.8,2.4)} else if(tool==='forest'){d.vegetation=THREE.MathUtils.clamp(d.vegetation+f*.34,0,1);d.water=THREE.MathUtils.clamp(d.water-f*.08,0,1);d.stone=THREE.MathUtils.clamp(d.stone-f*.04,0,1)} else if(tool==='stone'){d.stone=THREE.MathUtils.clamp(d.stone+f*.18,0,1);d.water=THREE.MathUtils.clamp(d.water-f*.10,0,1);d.vegetation=THREE.MathUtils.clamp(d.vegetation-f*.05,0,1);d.offset=THREE.MathUtils.clamp(d.offset+f*.018,-1.8,2.4)} else if(tool==='raise'){d.offset=THREE.MathUtils.clamp(d.offset+f*sculptStrength,-1.8,2.4);d.water=THREE.MathUtils.clamp(d.water-f*.08,0,1)} else if(tool==='lower'){d.offset=THREE.MathUtils.clamp(d.offset-f*sculptStrength,-1.8,2.4);d.water=THREE.MathUtils.clamp(d.water+f*.015,0,1)} else if(tool==='smooth'){d.offset=THREE.MathUtils.lerp(d.offset,avg,f*.22)} else if(tool==='flatten'){d.offset=THREE.MathUtils.lerp(d.offset,ctr,f*.42)} else if(tool==='erase'){d.water=THREE.MathUtils.clamp(d.water-f*.22,0,1);d.stone=THREE.MathUtils.clamp(d.stone-f*.22,0,1);d.vegetation=THREE.MathUtils.clamp(d.vegetation-f*.32,0,1);d.offset=THREE.MathUtils.lerp(d.offset,0,f*.16)} else {d.water=THREE.MathUtils.clamp(d.water-f*.18,0,1);d.stone=THREE.MathUtils.clamp(d.stone-f*.12,0,1);d.vegetation=THREE.MathUtils.clamp(d.vegetation+f*.06,0,1)} applyHeight(i); updateColorAt(i); changed=true} if(['raise','lower','water','stone'].includes(tool))naturalRelax(p,.07); if(changed){position.needsUpdate=true; terrainGeometry.attributes.color.needsUpdate=true; terrainGeometry.computeVertexNormals(); scheduleDecorations(); scheduleSave()}}
+function densityRulesFor(code){if(code===0)return{grass:.79,tree:.92,rock:.985,stride:3}; if(code===2)return{grass:.44,tree:.73,rock:.955,stride:1}; return{grass:.61,tree:.82,rock:.975,stride:2}}
+function refreshDecorations(){clearGroup(vegetation); clearGroup(rocks); for(let i=0;i<position.count;i+=19){const x=position.getX(i),z=position.getZ(i); if(Math.abs(x)>size*.48||Math.abs(z)>size*.48)continue; const d=terrainData[i], rules=densityRulesFor(d.density??1); if((i/19)%rules.stride!==0)continue; const n=seededNoise(x*1.7,z*1.7), slope=getSlopeAt(i), shore=d.water>.18||Math.abs(d.height-waterLevel)<.18; if(d.water<.18&&d.vegetation>.25&&slope<.30&&n>rules.grass){const scale=.65+seededNoise(x+4,z-2)*.52; if(d.vegetation>.66&&n>rules.tree)addTree(x,z,scale); else addGrassTuft(x,z,scale)} if(d.water<.25&&(d.stone>.58||slope>.74||(shore&&n>rules.rock))){const rx=x+(n-.5)*.50,rz=z+(seededNoise(z,x)-.5)*.50; addRock(rx,rz,.22+n*.30)}}}
+function scheduleDecorations(){clearTimeout(decorationTimer); decorationTimer=setTimeout(refreshDecorations,180)}
+function updateBrush(e){if(mode!=='edit'){brush.visible=false; return null} const p=pickPoint(e); brush.position.x=p.x; brush.position.z=p.z; brush.visible=true; return p}
+function showInfo(){infoPanel.classList.remove('is-hidden'); clearTimeout(infoTimer); infoTimer=setTimeout(()=>infoPanel.classList.add('is-hidden'),5200)}
+function resetCamera(){controls.target.set(0,0,0); camera.position.set(14,14,20); controls.update()}
+function setBrushLock(v){brushLock=v; app.dataset.brushLock=v?'on':'off'; brushLockBtn.textContent=v?'Pincel: continuo':'Pincel: toque'; brushLockBtn.classList.toggle('is-active',v); if(modeHint)modeHint.textContent=v?'Arrastra para pintar':'Arrastra para mover cámara'; controls.enabled=!(mode==='edit'&&v)}
+function setMode(m){mode=m; app.dataset.mode=m; const editing=m==='edit'; modeBtn.textContent=editing?'Editar':'Explorar'; modeBtn.classList.toggle('primary',!editing); if(!editing)setBrushLock(false); else controls.enabled=!brushLock; brush.visible=false; showInfo()}
+function setTool(t){currentTool=t; tools.forEach(b=>b.classList.toggle('active',b.dataset.tool===t))}
+function setBrushSize(n){const sizes={small:1.25,medium:2.6,large:4.8}; brushRadius=sizes[n]??sizes.medium; sizeButtons.forEach(b=>b.classList.toggle('active',b.dataset.size===n)); rebuildBrush()}
+function bindPress(el,fn){el?.addEventListener('pointerdown',e=>{e.preventDefault(); e.stopPropagation()}); el?.addEventListener('pointerup',e=>{e.preventDefault(); e.stopPropagation(); fn(e)}); el?.addEventListener('click',e=>{e.preventDefault(); e.stopPropagation()})}
+renderer.domElement.addEventListener('pointerdown',e=>{const p=pickPoint(e); downAt={x:e.clientX,y:e.clientY,point:p,time:performance.now(),historySaved:false}; updateBrush(e); if(mode==='edit'&&brushLock){pushHistory(); downAt.historySaved=true; paintAt(p,currentTool,{skipHistory:true})}});
+renderer.domElement.addEventListener('pointermove',e=>{const p=updateBrush(e); if(mode==='edit'&&brushLock&&downAt&&p)paintAt(p,currentTool,{skipHistory:true})});
+renderer.domElement.addEventListener('pointerup',e=>{if(!downAt)return; const moved=Math.hypot(e.clientX-downAt.x,e.clientY-downAt.y), now=performance.now(); if(mode==='edit'&&!brushLock&&moved<=tapMoveLimit)paintAt(downAt.point,currentTool); if(mode==='edit'&&brushLock&&downAt.historySaved)scheduleSave(); if(mode==='explore'&&moved<=tapMoveLimit){const same=lastTap?Math.hypot(e.clientX-lastTap.x,e.clientY-lastTap.y)<34:false; if(lastTap&&same&&now-lastTap.time<340){resetCamera(); lastTap=null}else lastTap={x:e.clientX,y:e.clientY,time:now}} downAt=null});
+renderer.domElement.addEventListener('pointerleave',()=>{downAt=null; brush.visible=false}); renderer.domElement.addEventListener('dblclick',resetCamera);
+bindPress(modeBtn,()=>setMode(mode==='explore'?'edit':'explore')); bindPress(brushLockBtn,()=>{setBrushLock(!brushLock); showInfo()}); bindPress(hideUiBtn,()=>{app.classList.toggle('ui-hidden'); hideUiBtn.textContent=app.classList.contains('ui-hidden')?'☰':'👁️'}); bindPress(helpBtn,showInfo); bindPress(undoBtn,undo); bindPress(redoBtn,redo); bindPress(seedBtn,()=>{pushHistory(); generateSeedWorld()});
+tools.forEach(b=>bindPress(b,()=>setTool(b.dataset.tool))); sizeButtons.forEach(b=>bindPress(b,()=>setBrushSize(b.dataset.size)));
+densitySelect?.addEventListener('change',e=>{density=e.target.value; scheduleSave()});
+bindPress(resetBtn,()=>{pushHistory(); generateSeedWorld(seedSalt)});
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight)});
+if(!loadSavedWorld()){generateSeedWorld(seedSalt); scheduleSave()} setMode('explore'); setBrushLock(false); setBrushSize('medium');
+function animate(){controls.update(); const t=performance.now()*.0015; water.material.opacity=.20+Math.sin(t)*.024; water.position.y=waterLevel+Math.sin(t*.8)*.01; cloudGroup.children.forEach((c,i)=>{c.position.x+=Math.sin(t+i)*.0008}); waterfalls.children.forEach((fall,index)=>{fall.children.forEach(child=>{if(child.material&&'opacity'in child.material)child.material.opacity=.42+Math.sin(t*3+index)*.04})}); renderer.render(scene,camera); requestAnimationFrame(animate)}
 animate();
