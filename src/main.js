@@ -1,8 +1,13 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
+const app = document.querySelector('#app');
 const viewport = document.querySelector('#viewport');
 const resetBtn = document.querySelector('#resetBtn');
+const modeBtn = document.querySelector('#modeBtn');
+const hideUiBtn = document.querySelector('#hideUiBtn');
+const helpBtn = document.querySelector('#helpBtn');
+const infoPanel = document.querySelector('#infoPanel');
 const tools = document.querySelectorAll('.tool');
 
 const scene = new THREE.Scene();
@@ -40,7 +45,9 @@ const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const pointerPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 let currentTool = 'grass';
+let mode = 'explore';
 let downAt = null;
+let infoTimer = null;
 
 const size = 30;
 const segments = 96;
@@ -211,11 +218,31 @@ function seedWorld() {
 }
 
 function updateBrush(event) {
+  if (mode !== 'edit') {
+    brush.visible = false;
+    return null;
+  }
   const point = pickPoint(event);
   brush.position.x = point.x;
   brush.position.z = point.z;
   brush.visible = true;
   return point;
+}
+
+function showInfo() {
+  infoPanel.classList.remove('is-hidden');
+  clearTimeout(infoTimer);
+  infoTimer = setTimeout(() => infoPanel.classList.add('is-hidden'), 5200);
+}
+
+function setMode(nextMode) {
+  mode = nextMode;
+  app.dataset.mode = mode;
+  const editing = mode === 'edit';
+  modeBtn.textContent = editing ? 'Editar' : 'Explorar';
+  modeBtn.classList.toggle('primary', !editing);
+  brush.visible = false;
+  showInfo();
 }
 
 function setTool(tool) {
@@ -235,9 +262,8 @@ renderer.domElement.addEventListener('pointermove', event => {
 renderer.domElement.addEventListener('pointerup', event => {
   if (!downAt) return;
   const moved = Math.hypot(event.clientX - downAt.x, event.clientY - downAt.y);
-  if (moved <= tapMoveLimit) {
-    paintAt(downAt.point, currentTool);
-  }
+  const shouldPaint = mode === 'edit' && moved <= tapMoveLimit;
+  if (shouldPaint) paintAt(downAt.point, currentTool);
   downAt = null;
 });
 
@@ -245,6 +271,17 @@ renderer.domElement.addEventListener('pointerleave', () => {
   downAt = null;
   brush.visible = false;
 });
+
+modeBtn.addEventListener('click', () => {
+  setMode(mode === 'explore' ? 'edit' : 'explore');
+});
+
+hideUiBtn.addEventListener('click', () => {
+  app.classList.toggle('ui-hidden');
+  hideUiBtn.textContent = app.classList.contains('ui-hidden') ? '☰' : '👁️';
+});
+
+helpBtn.addEventListener('click', showInfo);
 
 resetBtn.addEventListener('click', () => {
   rocks.clear();
@@ -271,6 +308,7 @@ window.addEventListener('resize', () => {
 });
 
 seedWorld();
+setMode('explore');
 
 function animate() {
   controls.update();
