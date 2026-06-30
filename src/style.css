@@ -66,7 +66,7 @@ h1 {
   pointer-events: auto;
 }
 
-.pill-btn, .round-btn, .tool, .wide-btn {
+.pill-btn, .round-btn, .tool, .wide-btn, .size-btn {
   border: 1px solid var(--line);
   background: var(--panel);
   color: var(--ink);
@@ -81,7 +81,7 @@ h1 {
   font-size: 14px;
 }
 
-.pill-btn.primary, .wide-btn.is-active {
+.pill-btn.primary, .wide-btn.is-active, .size-btn.active {
   background: var(--accent);
   color: white;
 }
@@ -107,7 +107,10 @@ h1 {
   pointer-events: none;
   max-width: calc(100vw - 132px);
   overflow-x: auto;
+  scrollbar-width: none;
 }
+
+.tools-panel::-webkit-scrollbar { display: none; }
 
 #app[data-mode="edit"] .tools-panel {
   transform: translateY(0);
@@ -140,6 +143,7 @@ h1 {
   opacity: 0;
   transform: translateY(18px);
   pointer-events: none;
+  max-width: calc(100vw - 36px);
 }
 
 #app[data-mode="edit"] .edit-panel {
@@ -154,6 +158,22 @@ h1 {
   padding: 8px 14px;
   font-size: 14px;
   white-space: nowrap;
+}
+
+.brush-size {
+  display: flex;
+  gap: 5px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.size-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 #modeHint {
@@ -240,6 +260,13 @@ h1 {
     min-height: 42px;
     padding: 9px 13px;
   }
+
+  .edit-panel {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .edit-panel::-webkit-scrollbar { display: none; }
 
   .quickbar {
     right: 18px;
