@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Story Worlds</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <main id="app">
+    <section id="viewport" aria-label="Lienzo 3D de Story Worlds"></section>
+
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Ezra Studios</p>
+        <h1>Story Worlds</h1>
+      </div>
+      <button id="resetBtn" class="ghost-btn" type="button">Reiniciar</button>
+    </header>
+
+    <aside class="panel tools-panel">
+      <p class="panel-title">Pintar</p>
+      <button class="tool active" data-tool="grass" type="button">🌿 Terreno</button>
+      <button class="tool" data-tool="water" type="button">🌊 Agua</button>
+      <button class="tool" data-tool="stone" type="button">🪨 Roca</button>
+      <button class="tool" data-tool="erase" type="button">🫥 Borrar</button>
+    </aside>
+
+    <aside class="panel info-panel">
+      <strong>v0.1</strong>
+      <span>Toca una celda para pintar. Arrastra para girar. Pellizca para acercar.</span>
+    </aside>
+  </main>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
