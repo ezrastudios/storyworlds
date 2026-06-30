@@ -25,17 +25,25 @@
       <button class="tool active" data-tool="grass" type="button" title="Terreno">🌿</button>
       <button class="tool" data-tool="water" type="button" title="Agua">🌊</button>
       <button class="tool" data-tool="stone" type="button" title="Roca">🪨</button>
+      <button class="tool" data-tool="raise" type="button" title="Elevar">⛰️</button>
+      <button class="tool" data-tool="lower" type="button" title="Bajar">🕳️</button>
+      <button class="tool" data-tool="smooth" type="button" title="Suavizar">🪄</button>
       <button class="tool" data-tool="erase" type="button" title="Borrar">⌫</button>
     </aside>
 
     <aside id="editPanel" class="panel edit-panel ui-layer">
       <button id="brushLockBtn" class="wide-btn" type="button">Pincel: toque</button>
+      <div class="brush-size" aria-label="Tamaño del pincel">
+        <button class="size-btn" data-size="small" type="button">S</button>
+        <button class="size-btn active" data-size="medium" type="button">M</button>
+        <button class="size-btn" data-size="large" type="button">L</button>
+      </div>
       <span id="modeHint">Arrastra para mover cámara</span>
     </aside>
 
     <aside id="infoPanel" class="panel info-panel ui-layer">
-      <strong>v0.3</strong>
-      <span>Explorar mueve la cámara. Editar pinta con toques. Activa el pincel continuo para dibujar arrastrando.</span>
+      <strong>v0.4</strong>
+      <span>Esculpe el terreno: eleva, baja y suaviza. Cambia el tamaño del pincel con S/M/L.</span>
     </aside>
 
     <nav class="quickbar">
