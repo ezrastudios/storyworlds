@@ -11,6 +11,7 @@ const brushLockBtn = document.querySelector('#brushLockBtn');
 const modeHint = document.querySelector('#modeHint');
 const infoPanel = document.querySelector('#infoPanel');
 const tools = document.querySelectorAll('.tool[data-tool]');
+const sizeButtons = document.querySelectorAll('.size-btn');
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xdfe7df);
@@ -49,13 +50,14 @@ const pointerPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 let currentTool = 'grass';
 let mode = 'explore';
 let brushLock = false;
+let brushRadius = 2.2;
 let downAt = null;
 let infoTimer = null;
 
 const size = 30;
 const segments = 96;
-const brushRadius = 2.2;
 const tapMoveLimit = 8;
+const sculptStrength = 0.18;
 
 const palette = {
   grass: new THREE.Color(0xaab486),
@@ -77,7 +79,7 @@ for (let i = 0; i < position.count; i++) {
   const z = position.getZ(i);
   const ripple = Math.sin(x * 0.48) * 0.08 + Math.cos(z * 0.44) * 0.07 + Math.sin((x + z) * 0.28) * 0.05;
   baseHeights[i] = ripple;
-  terrainData[i] = { height: ripple, water: 0, stone: 0 };
+  terrainData[i] = { height: ripple, water: 0, stone: 0, offset: 0 };
   const color = palette.grass.clone().lerp(palette.grass2, Math.random() * 0.35);
   colors.push(color.r, color.g, color.b);
   position.setY(i, ripple);
@@ -102,17 +104,27 @@ const water = new THREE.Mesh(
 water.position.y = -0.17;
 world.add(water);
 
-const brush = new THREE.Mesh(
-  new THREE.RingGeometry(brushRadius * 0.84, brushRadius, 64),
-  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, side: THREE.DoubleSide })
-);
-brush.rotation.x = -Math.PI / 2;
-brush.position.y = 0.08;
-brush.visible = false;
+const brushMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, side: THREE.DoubleSide });
+let brush = createBrush();
 scene.add(brush);
 
 const rocks = new THREE.Group();
 world.add(rocks);
+
+function createBrush() {
+  const mesh = new THREE.Mesh(new THREE.RingGeometry(brushRadius * 0.84, brushRadius, 64), brushMaterial);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = 0.08;
+  mesh.visible = false;
+  return mesh;
+}
+
+function rebuildBrush() {
+  scene.remove(brush);
+  brush.geometry.dispose();
+  brush = createBrush();
+  scene.add(brush);
+}
 
 function addRock(x, z, scale = 1) {
   const rock = new THREE.Mesh(
@@ -130,9 +142,7 @@ function getHeightAt(x, z) {
   let closest = 0;
   let best = Infinity;
   for (let i = 0; i < position.count; i += 3) {
-    const dx = position.getX(i) - x;
-    const dz = position.getZ(i) - z;
-    const d = dx * dx + dz * dz;
+    const d = (position.getX(i) - x) ** 2 + (position.getZ(i) - z) ** 2;
     if (d < best) {
       best = d;
       closest = position.getY(i);
@@ -151,9 +161,39 @@ function pickPoint(event) {
   return point;
 }
 
-function paintAt(point, tool) {
+function sampleAverageHeight(point) {
+  let total = 0;
+  let count = 0;
+  for (let i = 0; i < position.count; i++) {
+    const distance = Math.hypot(position.getX(i) - point.x, position.getZ(i) - point.z);
+    if (distance <= brushRadius) {
+      total += terrainData[i].height;
+      count++;
+    }
+  }
+  return count ? total / count : 0;
+}
+
+function updateColorAt(i) {
   const colorAttribute = terrainGeometry.attributes.color;
+  const x = position.getX(i);
+  const z = position.getZ(i);
+  const data = terrainData[i];
+  const green = palette.grass.clone().lerp(palette.grass2, Math.sin(x * 0.7 + z * 0.4) * 0.15 + 0.25);
+  const color = green.lerp(palette.water, data.water).lerp(palette.stone, data.stone * 0.9);
+  colorAttribute.setXYZ(i, color.r, color.g, color.b);
+}
+
+function applyHeight(i) {
+  const data = terrainData[i];
+  const targetHeight = baseHeights[i] + data.offset - data.water * 0.28 + data.stone * 0.42;
+  data.height = THREE.MathUtils.lerp(data.height, targetHeight, 0.85);
+  position.setY(i, data.height);
+}
+
+function paintAt(point, tool) {
   let changed = false;
+  const averageHeight = tool === 'smooth' ? sampleAverageHeight(point) : 0;
 
   for (let i = 0; i < position.count; i++) {
     const x = position.getX(i);
@@ -170,27 +210,32 @@ function paintAt(point, tool) {
     } else if (tool === 'stone') {
       data.stone = THREE.MathUtils.clamp(data.stone + falloff * 0.16, 0, 1);
       data.water = THREE.MathUtils.clamp(data.water - falloff * 0.08, 0, 1);
+    } else if (tool === 'raise') {
+      data.offset = THREE.MathUtils.clamp(data.offset + falloff * sculptStrength, -1.6, 2.2);
+      data.water = THREE.MathUtils.clamp(data.water - falloff * 0.08, 0, 1);
+    } else if (tool === 'lower') {
+      data.offset = THREE.MathUtils.clamp(data.offset - falloff * sculptStrength, -1.6, 2.2);
+      data.water = THREE.MathUtils.clamp(data.water + falloff * 0.04, 0, 1);
+    } else if (tool === 'smooth') {
+      const desiredOffset = averageHeight - baseHeights[i] + data.water * 0.28 - data.stone * 0.42;
+      data.offset = THREE.MathUtils.lerp(data.offset, desiredOffset, falloff * 0.32);
     } else if (tool === 'erase') {
       data.water = THREE.MathUtils.clamp(data.water - falloff * 0.2, 0, 1);
       data.stone = THREE.MathUtils.clamp(data.stone - falloff * 0.2, 0, 1);
+      data.offset = THREE.MathUtils.lerp(data.offset, 0, falloff * 0.12);
     } else {
       data.water = THREE.MathUtils.clamp(data.water - falloff * 0.15, 0, 1);
       data.stone = THREE.MathUtils.clamp(data.stone - falloff * 0.1, 0, 1);
     }
 
-    const targetHeight = baseHeights[i] - data.water * 0.28 + data.stone * 0.42;
-    data.height = THREE.MathUtils.lerp(data.height, targetHeight, 0.85);
-    position.setY(i, data.height);
-
-    const green = palette.grass.clone().lerp(palette.grass2, Math.sin(x * 0.7 + z * 0.4) * 0.15 + 0.25);
-    const color = green.lerp(palette.water, data.water).lerp(palette.stone, data.stone * 0.9);
-    colorAttribute.setXYZ(i, color.r, color.g, color.b);
+    applyHeight(i);
+    updateColorAt(i);
     changed = true;
   }
 
   if (changed) {
     position.needsUpdate = true;
-    colorAttribute.needsUpdate = true;
+    terrainGeometry.attributes.color.needsUpdate = true;
     terrainGeometry.computeVertexNormals();
   }
 }
@@ -202,6 +247,8 @@ function seedWorld() {
   paintAt(new THREE.Vector3(4.2, 0, 2.5), 'stone');
   paintAt(new THREE.Vector3(4.8, 0, 2.1), 'stone');
   paintAt(new THREE.Vector3(-5, 0, -3), 'stone');
+  paintAt(new THREE.Vector3(-3.8, 0, 2.5), 'raise');
+  paintAt(new THREE.Vector3(-3.8, 0, 2.5), 'raise');
   addRock(4.1, 2.4, 1.2);
   addRock(4.8, 2.2, 0.85);
   addRock(-5, -3, 0.9);
@@ -251,6 +298,13 @@ function setTool(tool) {
   tools.forEach(button => button.classList.toggle('active', button.dataset.tool === tool));
 }
 
+function setBrushSize(sizeName) {
+  const sizes = { small: 1.25, medium: 2.2, large: 3.6 };
+  brushRadius = sizes[sizeName] ?? sizes.medium;
+  sizeButtons.forEach(button => button.classList.toggle('active', button.dataset.size === sizeName));
+  rebuildBrush();
+}
+
 renderer.domElement.addEventListener('pointerdown', event => {
   const point = pickPoint(event);
   downAt = { x: event.clientX, y: event.clientY, point };
@@ -276,40 +330,32 @@ renderer.domElement.addEventListener('pointerleave', () => {
   brush.visible = false;
 });
 
-modeBtn.addEventListener('click', () => {
-  setMode(mode === 'explore' ? 'edit' : 'explore');
-});
-
+modeBtn.addEventListener('click', () => setMode(mode === 'explore' ? 'edit' : 'explore'));
 brushLockBtn.addEventListener('click', event => {
   event.stopPropagation();
   setBrushLock(!brushLock);
   showInfo();
 });
-
 hideUiBtn.addEventListener('click', () => {
   app.classList.toggle('ui-hidden');
   hideUiBtn.textContent = app.classList.contains('ui-hidden') ? '☰' : '👁️';
 });
-
 helpBtn.addEventListener('click', showInfo);
+tools.forEach(button => button.addEventListener('click', () => setTool(button.dataset.tool)));
+sizeButtons.forEach(button => button.addEventListener('click', () => setBrushSize(button.dataset.size)));
 
 resetBtn.addEventListener('click', () => {
   rocks.clear();
   for (let i = 0; i < position.count; i++) {
-    terrainData[i] = { height: baseHeights[i], water: 0, stone: 0 };
+    terrainData[i] = { height: baseHeights[i], water: 0, stone: 0, offset: 0 };
     position.setY(i, baseHeights[i]);
-    const x = position.getX(i);
-    const z = position.getZ(i);
-    const color = palette.grass.clone().lerp(palette.grass2, Math.sin(x * 0.7 + z * 0.4) * 0.15 + 0.25);
-    terrainGeometry.attributes.color.setXYZ(i, color.r, color.g, color.b);
+    updateColorAt(i);
   }
   position.needsUpdate = true;
   terrainGeometry.attributes.color.needsUpdate = true;
   terrainGeometry.computeVertexNormals();
   seedWorld();
 });
-
-tools.forEach(button => button.addEventListener('click', () => setTool(button.dataset.tool)));
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -320,6 +366,7 @@ window.addEventListener('resize', () => {
 seedWorld();
 setMode('explore');
 setBrushLock(false);
+setBrushSize('medium');
 
 function animate() {
   controls.update();
