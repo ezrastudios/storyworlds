@@ -58,7 +58,7 @@ let infoTimer = null;
 const size = 30;
 const segments = 96;
 const tapMoveLimit = 8;
-const sculptStrength = 0.42;
+const sculptStrength = 0.18;
 
 const palette = {
   grass: new THREE.Color(0xaab486),
@@ -101,7 +101,7 @@ const waterGeometry = new THREE.PlaneGeometry(size, size, 1, 1);
 waterGeometry.rotateX(-Math.PI / 2);
 const water = new THREE.Mesh(
   waterGeometry,
-  new THREE.MeshStandardMaterial({ color: 0x8bb5b5, transparent: true, opacity: 0.24, roughness: 0.38, metalness: 0.05 })
+  new THREE.MeshStandardMaterial({ color: 0x8bb5b5, transparent: true, opacity: 0.22, roughness: 0.38, metalness: 0.05 })
 );
 water.position.y = -0.18;
 world.add(water);
@@ -168,7 +168,7 @@ function updateColorAt(i) {
   const z = position.getZ(i);
   const data = terrainData[i];
   const baseGreen = palette.grass.clone().lerp(palette.grass2, Math.sin(x * 0.7 + z * 0.4) * 0.15 + 0.25);
-  const relief = THREE.MathUtils.clamp(Math.abs(data.offset) * 0.35, 0, 0.45);
+  const relief = THREE.MathUtils.clamp(Math.abs(data.offset) * 0.22, 0, 0.32);
   const color = baseGreen
     .lerp(palette.earth, relief)
     .lerp(palette.water, data.water)
@@ -178,27 +178,54 @@ function updateColorAt(i) {
 
 function applyHeight(i, immediate = false) {
   const data = terrainData[i];
-  const targetHeight = baseHeights[i] + data.offset - data.water * 0.30 + data.stone * 0.42;
-  data.height = immediate ? targetHeight : THREE.MathUtils.lerp(data.height, targetHeight, 0.92);
+  const targetHeight = baseHeights[i] + data.offset - data.water * 0.30 + data.stone * 0.34;
+  data.height = immediate ? targetHeight : THREE.MathUtils.lerp(data.height, targetHeight, 0.9);
   position.setY(i, data.height);
 }
 
-function sampleAverageOffset(point) {
-  let total = 0;
-  let count = 0;
+function brushIndexes(point) {
+  const indexes = [];
   for (let i = 0; i < position.count; i++) {
     const distance = Math.hypot(position.getX(i) - point.x, position.getZ(i) - point.z);
-    if (distance <= brushRadius) {
-      total += terrainData[i].offset;
-      count++;
+    if (distance <= brushRadius) indexes.push({ i, distance });
+  }
+  return indexes;
+}
+
+function sampleAverageOffset(point) {
+  const indexes = brushIndexes(point);
+  if (!indexes.length) return 0;
+  return indexes.reduce((sum, item) => sum + terrainData[item.i].offset, 0) / indexes.length;
+}
+
+function sampleCenterOffset(point) {
+  let closest = 0;
+  let best = Infinity;
+  for (let i = 0; i < position.count; i++) {
+    const d = Math.hypot(position.getX(i) - point.x, position.getZ(i) - point.z);
+    if (d < best) {
+      best = d;
+      closest = i;
     }
   }
-  return count ? total / count : 0;
+  return terrainData[closest].offset;
+}
+
+function naturalRelax(point, strength = 0.18) {
+  const averageOffset = sampleAverageOffset(point);
+  for (const { i, distance } of brushIndexes(point)) {
+    const falloff = Math.pow(1 - distance / brushRadius, 2.2);
+    const data = terrainData[i];
+    data.offset = THREE.MathUtils.lerp(data.offset, averageOffset, falloff * strength);
+    applyHeight(i, true);
+    updateColorAt(i);
+  }
 }
 
 function paintAt(point, tool) {
   let changed = false;
   const averageOffset = tool === 'smooth' ? sampleAverageOffset(point) : 0;
+  const centerOffset = tool === 'flatten' ? sampleCenterOffset(point) : 0;
 
   for (let i = 0; i < position.count; i++) {
     const x = position.getX(i);
@@ -206,37 +233,43 @@ function paintAt(point, tool) {
     const distance = Math.hypot(x - point.x, z - point.z);
     if (distance > brushRadius) continue;
 
-    const falloff = Math.pow(1 - distance / brushRadius, 1.65);
+    const falloff = Math.pow(1 - distance / brushRadius, 2.25);
     const data = terrainData[i];
 
     if (tool === 'water') {
-      data.water = THREE.MathUtils.clamp(data.water + falloff * 0.22, 0, 1);
-      data.stone = THREE.MathUtils.clamp(data.stone - falloff * 0.12, 0, 1);
-      data.offset = THREE.MathUtils.clamp(data.offset - falloff * 0.06, -2.4, 3.2);
+      data.water = THREE.MathUtils.clamp(data.water + falloff * 0.20, 0, 1);
+      data.stone = THREE.MathUtils.clamp(data.stone - falloff * 0.10, 0, 1);
+      data.offset = THREE.MathUtils.clamp(data.offset - falloff * 0.04, -1.8, 2.4);
     } else if (tool === 'stone') {
-      data.stone = THREE.MathUtils.clamp(data.stone + falloff * 0.20, 0, 1);
+      data.stone = THREE.MathUtils.clamp(data.stone + falloff * 0.18, 0, 1);
       data.water = THREE.MathUtils.clamp(data.water - falloff * 0.10, 0, 1);
-      data.offset = THREE.MathUtils.clamp(data.offset + falloff * 0.05, -2.4, 3.2);
+      data.offset = THREE.MathUtils.clamp(data.offset + falloff * 0.025, -1.8, 2.4);
     } else if (tool === 'raise') {
-      data.offset = THREE.MathUtils.clamp(data.offset + falloff * sculptStrength, -2.4, 3.2);
-      data.water = THREE.MathUtils.clamp(data.water - falloff * 0.10, 0, 1);
+      data.offset = THREE.MathUtils.clamp(data.offset + falloff * sculptStrength, -1.8, 2.4);
+      data.water = THREE.MathUtils.clamp(data.water - falloff * 0.08, 0, 1);
     } else if (tool === 'lower') {
-      data.offset = THREE.MathUtils.clamp(data.offset - falloff * sculptStrength, -2.4, 3.2);
-      data.water = THREE.MathUtils.clamp(data.water + falloff * 0.02, 0, 1);
+      data.offset = THREE.MathUtils.clamp(data.offset - falloff * sculptStrength, -1.8, 2.4);
+      data.water = THREE.MathUtils.clamp(data.water + falloff * 0.015, 0, 1);
     } else if (tool === 'smooth') {
-      data.offset = THREE.MathUtils.lerp(data.offset, averageOffset, falloff * 0.65);
+      data.offset = THREE.MathUtils.lerp(data.offset, averageOffset, falloff * 0.75);
+    } else if (tool === 'flatten') {
+      data.offset = THREE.MathUtils.lerp(data.offset, centerOffset, falloff * 0.55);
     } else if (tool === 'erase') {
       data.water = THREE.MathUtils.clamp(data.water - falloff * 0.22, 0, 1);
       data.stone = THREE.MathUtils.clamp(data.stone - falloff * 0.22, 0, 1);
-      data.offset = THREE.MathUtils.lerp(data.offset, 0, falloff * 0.20);
+      data.offset = THREE.MathUtils.lerp(data.offset, 0, falloff * 0.16);
     } else {
       data.water = THREE.MathUtils.clamp(data.water - falloff * 0.18, 0, 1);
       data.stone = THREE.MathUtils.clamp(data.stone - falloff * 0.12, 0, 1);
     }
 
-    applyHeight(i, tool === 'raise' || tool === 'lower' || tool === 'smooth');
+    applyHeight(i, true);
     updateColorAt(i);
     changed = true;
+  }
+
+  if (tool === 'raise' || tool === 'lower' || tool === 'water' || tool === 'stone') {
+    naturalRelax(point, 0.10);
   }
 
   if (changed) {
@@ -253,7 +286,6 @@ function seedWorld() {
   paintAt(new THREE.Vector3(4.2, 0, 2.5), 'stone');
   paintAt(new THREE.Vector3(4.8, 0, 2.1), 'stone');
   paintAt(new THREE.Vector3(-5, 0, -3), 'stone');
-  paintAt(new THREE.Vector3(-3.8, 0, 2.5), 'raise');
   paintAt(new THREE.Vector3(-3.8, 0, 2.5), 'raise');
   addRock(4.1, 2.4, 1.2);
   addRock(4.8, 2.2, 0.85);
@@ -391,7 +423,7 @@ setBrushSize('medium');
 
 function animate() {
   controls.update();
-  water.material.opacity = 0.24 + Math.sin(performance.now() * 0.0015) * 0.025;
+  water.material.opacity = 0.22 + Math.sin(performance.now() * 0.0015) * 0.022;
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
 }
