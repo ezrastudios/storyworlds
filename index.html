@@ -23,8 +23,8 @@
     </header>
 
     <aside id="toolsPanel" class="panel tools-panel ui-layer" aria-label="Herramientas de edición">
-      <button class="tool active" data-tool="grass" type="button" title="Terreno">🌿</button>
-      <button class="tool" data-tool="forest" type="button" title="Bosque">🌳</button>
+      <button class="tool active" data-tool="grass" type="button" title="Naturaleza: spray de pasto, flores y plantas">🌿</button>
+      <button class="tool" data-tool="forest" type="button" title="Árboles por bioma: palmeras, pinos o árboles de planicie">🌳</button>
       <button class="tool" data-tool="water" type="button" title="Agua">🌊</button>
       <button class="tool" data-tool="waterfall" type="button" title="Cascada: crea caída sólo en terreno alto">💧</button>
       <button class="tool" data-tool="stone" type="button" title="Roca">🪨</button>
@@ -49,12 +49,13 @@
         <option value="normal" selected>Normal</option>
         <option value="high">Muchas</option>
       </select>
+      <label class="time-control" aria-label="Hora del día">☀️<input id="timeSlider" type="range" min="0" max="1" value="0.28" step="0.01" />🌙</label>
       <span id="modeHint">Arrastra para mover cámara</span>
     </aside>
 
     <aside id="infoPanel" class="panel info-panel ui-layer">
-      <strong>v0.6.3</strong>
-      <span>Seeds con tipos distintos: valle, montaña, isla y cañón. Cascadas menos cuadradas y sólo desde altura.</span>
+      <strong>v0.7</strong>
+      <span>Biomas, spray natural, palmeras en costas, pinos en altura, sol/luna y día/noche.</span>
     </aside>
 
     <nav class="quickbar">
