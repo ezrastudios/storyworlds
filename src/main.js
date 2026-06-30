@@ -55,6 +55,7 @@ let brushRadius = 2.2;
 let downAt = null;
 let infoTimer = null;
 let decorationTimer = null;
+let lastTap = null;
 
 const size = 30;
 const segments = 96;
@@ -116,13 +117,16 @@ scene.add(brush);
 
 const rocks = new THREE.Group();
 const vegetation = new THREE.Group();
+const waterfalls = new THREE.Group();
 world.add(rocks);
 world.add(vegetation);
+world.add(waterfalls);
 
 const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x8b7555, roughness: 0.95 });
 const leafMaterial = new THREE.MeshStandardMaterial({ color: 0x71875c, roughness: 0.98 });
 const grassMaterial = new THREE.MeshStandardMaterial({ color: 0x6f8558, roughness: 0.98 });
 const pebbleMaterial = new THREE.MeshStandardMaterial({ color: 0x9d988b, roughness: 0.96 });
+const waterfallMaterial = new THREE.MeshStandardMaterial({ color: 0x9fd0d3, transparent: true, opacity: 0.54, roughness: 0.25, metalness: 0.03, side: THREE.DoubleSide });
 
 function createBrush() {
   const mesh = new THREE.Mesh(new THREE.RingGeometry(brushRadius * 0.84, brushRadius, 64), brushMaterial);
@@ -186,16 +190,16 @@ function getSlopeAt(i) {
 function clearGroup(group) {
   for (const child of [...group.children]) {
     group.remove(child);
-    if (child.geometry) child.geometry.dispose();
     if (child.children) clearGroup(child);
+    if (child.geometry) child.geometry.dispose();
   }
 }
 
 function addRock(x, z, scale = 1) {
-  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.35 * scale, 1), pebbleMaterial);
-  rock.position.set(x, getHeightAt(x, z) + 0.2 * scale, z);
-  rock.rotation.set(Math.random() * 0.8, Math.random() * Math.PI, Math.random() * 0.4);
-  rock.scale.set(1.25, 0.55, 0.85);
+  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.22 * scale, 1), pebbleMaterial);
+  rock.position.set(x, getHeightAt(x, z) + 0.12 * scale, z);
+  rock.rotation.set(seededNoise(x + 11, z - 3) * 0.55, seededNoise(x, z) * Math.PI * 2, (seededNoise(x - 7, z + 5) - 0.5) * 0.28);
+  rock.scale.set(1.32, 0.48, 0.82);
   rock.castShadow = true;
   rocks.add(rock);
 }
@@ -227,6 +231,19 @@ function addTree(x, z, scale = 1) {
   tree.position.set(x, getHeightAt(x, z) + 0.02, z);
   tree.rotation.y = seededNoise(x, z) * Math.PI * 2;
   vegetation.add(tree);
+}
+
+function addWaterfall(point) {
+  const x = point.x;
+  const z = point.z;
+  const top = getHeightAt(x, z) + 0.08;
+  const bottom = Math.max(waterLevel + 0.05, top - 1.35);
+  const height = Math.max(0.35, top - bottom);
+  const ribbon = new THREE.Mesh(new THREE.PlaneGeometry(0.95, height, 1, 8), waterfallMaterial);
+  ribbon.position.set(x, bottom + height / 2, z);
+  ribbon.rotation.y = seededNoise(x, z) * Math.PI * 2;
+  ribbon.castShadow = false;
+  waterfalls.add(ribbon);
 }
 
 function updateColorAt(i) {
@@ -284,6 +301,11 @@ function naturalRelax(point, strength = 0.18) {
 }
 
 function paintAt(point, tool) {
+  if (tool === 'waterfall') {
+    addWaterfall(point);
+    return;
+  }
+
   let changed = false;
   const averageOffset = tool === 'smooth' ? sampleAverageOffset(point) : 0;
   const centerOffset = tool === 'flatten' ? sampleCenterOffset(point) : 0;
@@ -367,8 +389,10 @@ function refreshDecorations() {
       else addGrassTuft(x, z, scale);
     }
 
-    if (data.water < 0.25 && (data.stone > 0.36 || slope > 0.34 || (shore && n > 0.83))) {
-      addRock(x + (n - 0.5) * 0.6, z + (seededNoise(z, x) - 0.5) * 0.6, 0.45 + n * 0.9);
+    if (data.water < 0.25 && (data.stone > 0.36 || slope > 0.42 || (shore && n > 0.9))) {
+      const rx = x + (n - 0.5) * 0.45;
+      const rz = z + (seededNoise(z, x) - 0.5) * 0.45;
+      addRock(rx, rz, 0.32 + n * 0.48);
     }
   }
 }
@@ -407,6 +431,12 @@ function showInfo() {
   infoPanel.classList.remove('is-hidden');
   clearTimeout(infoTimer);
   infoTimer = setTimeout(() => infoPanel.classList.add('is-hidden'), 5200);
+}
+
+function resetCamera() {
+  controls.target.set(0, 0, 0);
+  camera.position.set(10, 12, 14);
+  controls.update();
 }
 
 function setBrushLock(nextValue) {
@@ -460,7 +490,7 @@ function bindPress(element, handler) {
 
 renderer.domElement.addEventListener('pointerdown', event => {
   const point = pickPoint(event);
-  downAt = { x: event.clientX, y: event.clientY, point };
+  downAt = { x: event.clientX, y: event.clientY, point, time: performance.now() };
   updateBrush(event);
   if (mode === 'edit' && brushLock) paintAt(point, currentTool);
 });
@@ -473,8 +503,20 @@ renderer.domElement.addEventListener('pointermove', event => {
 renderer.domElement.addEventListener('pointerup', event => {
   if (!downAt) return;
   const moved = Math.hypot(event.clientX - downAt.x, event.clientY - downAt.y);
-  const shouldPaint = mode === 'edit' && !brushLock && moved <= tapMoveLimit;
-  if (shouldPaint) paintAt(downAt.point, currentTool);
+  const now = performance.now();
+
+  if (mode === 'edit' && !brushLock && moved <= tapMoveLimit) paintAt(downAt.point, currentTool);
+
+  if (mode === 'explore' && moved <= tapMoveLimit) {
+    const sameSpot = lastTap ? Math.hypot(event.clientX - lastTap.x, event.clientY - lastTap.y) < 34 : false;
+    if (lastTap && sameSpot && now - lastTap.time < 340) {
+      resetCamera();
+      lastTap = null;
+    } else {
+      lastTap = { x: event.clientX, y: event.clientY, time: now };
+    }
+  }
+
   downAt = null;
 });
 
@@ -483,10 +525,7 @@ renderer.domElement.addEventListener('pointerleave', () => {
   brush.visible = false;
 });
 
-renderer.domElement.addEventListener('dblclick', () => {
-  controls.target.set(0, 0, 0);
-  camera.position.set(10, 12, 14);
-});
+renderer.domElement.addEventListener('dblclick', resetCamera);
 
 bindPress(modeBtn, () => setMode(mode === 'explore' ? 'edit' : 'explore'));
 bindPress(brushLockBtn, () => {
@@ -504,6 +543,7 @@ sizeButtons.forEach(button => bindPress(button, () => setBrushSize(button.datase
 bindPress(resetBtn, () => {
   clearGroup(vegetation);
   clearGroup(rocks);
+  clearGroup(waterfalls);
   for (let i = 0; i < position.count; i++) {
     terrainData[i] = { height: baseHeights[i], water: 0, stone: 0, offset: 0, vegetation: 0 };
     position.setY(i, baseHeights[i]);
@@ -531,6 +571,9 @@ function animate() {
   const t = performance.now() * 0.0015;
   water.material.opacity = 0.20 + Math.sin(t) * 0.024;
   water.position.y = waterLevel + Math.sin(t * 0.8) * 0.01;
+  waterfalls.children.forEach((fall, index) => {
+    fall.material.opacity = 0.48 + Math.sin(t * 3 + index) * 0.05;
+  });
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
 }
