@@ -7,10 +7,10 @@ const tools = document.querySelectorAll('.tool');
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xdfe7df);
-scene.fog = new THREE.Fog(0xdfe7df, 18, 55);
+scene.fog = new THREE.Fog(0xdfe7df, 20, 70);
 
-const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 120);
-camera.position.set(8, 10, 12);
+const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 140);
+camera.position.set(10, 12, 14);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -23,173 +23,199 @@ controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.target.set(0, 0, 0);
 controls.maxPolarAngle = Math.PI * 0.46;
-controls.minDistance = 7;
-controls.maxDistance = 34;
+controls.minDistance = 8;
+controls.maxDistance = 36;
 controls.enablePan = false;
 
-const sun = new THREE.DirectionalLight(0xffffff, 2.15);
-sun.position.set(6, 11, 5);
+const sun = new THREE.DirectionalLight(0xffffff, 2.25);
+sun.position.set(7, 12, 5);
 sun.castShadow = true;
 scene.add(sun);
-scene.add(new THREE.HemisphereLight(0xf4efe5, 0x8b927d, 1.65));
+scene.add(new THREE.HemisphereLight(0xf4efe5, 0x88917c, 1.8));
 
 const world = new THREE.Group();
 scene.add(world);
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
-const cells = new Map();
+const pointerPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 let currentTool = 'grass';
-let downAt = null;
 let isPainting = false;
+let downAt = null;
 
-const radius = 0.92;
-const hexHeight = Math.sqrt(3) * radius;
+const size = 30;
+const segments = 96;
+const brushRadius = 2.2;
 
-const materials = {
-  grass: new THREE.MeshStandardMaterial({ color: 0xaab486, roughness: 0.98, flatShading: false }),
-  water: new THREE.MeshStandardMaterial({ color: 0x8bb5b5, roughness: 0.5, metalness: 0.03, transparent: true, opacity: 0.9 }),
-  stone: new THREE.MeshStandardMaterial({ color: 0xb6b1a2, roughness: 0.95 }),
-  guide: new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.16 })
+const palette = {
+  grass: new THREE.Color(0xaab486),
+  grass2: new THREE.Color(0xb8c195),
+  water: new THREE.Color(0x8bb5b5),
+  stone: new THREE.Color(0xb7b1a0)
 };
 
-const hexShape = new THREE.Shape();
-for (let i = 0; i < 6; i++) {
-  const angle = Math.PI / 3 * i + Math.PI / 6;
-  const x = Math.cos(angle) * radius;
-  const y = Math.sin(angle) * radius;
-  if (i === 0) hexShape.moveTo(x, y);
-  else hexShape.lineTo(x, y);
+const terrainGeometry = new THREE.PlaneGeometry(size, size, segments, segments);
+terrainGeometry.rotateX(-Math.PI / 2);
+
+const position = terrainGeometry.attributes.position;
+const colors = [];
+const baseHeights = [];
+const terrainData = [];
+
+for (let i = 0; i < position.count; i++) {
+  const x = position.getX(i);
+  const z = position.getZ(i);
+  const ripple = Math.sin(x * 0.48) * 0.08 + Math.cos(z * 0.44) * 0.07 + Math.sin((x + z) * 0.28) * 0.05;
+  baseHeights[i] = ripple;
+  terrainData[i] = { height: ripple, water: 0, stone: 0 };
+  const color = palette.grass.clone().lerp(palette.grass2, Math.random() * 0.35);
+  colors.push(color.r, color.g, color.b);
+  position.setY(i, ripple);
 }
-hexShape.closePath();
 
-const landGeometry = new THREE.ExtrudeGeometry(hexShape, {
-  depth: 0.1,
-  bevelEnabled: true,
-  bevelThickness: 0.035,
-  bevelSize: 0.05,
-  bevelSegments: 3
-});
-landGeometry.rotateX(-Math.PI / 2);
-landGeometry.translate(0, -0.05, 0);
+terrainGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+terrainGeometry.computeVertexNormals();
 
-const waterGeometry = new THREE.CylinderGeometry(radius * 0.95, radius * 0.98, 0.045, 36);
-waterGeometry.translate(0, -0.04, 0);
-
-const guideGeometry = new THREE.BufferGeometry().setFromPoints([
-  ...Array.from({ length: 7 }, (_, i) => {
-    const angle = Math.PI / 3 * (i % 6) + Math.PI / 6;
-    return new THREE.Vector3(Math.cos(angle) * radius, 0.018, Math.sin(angle) * radius);
+const terrain = new THREE.Mesh(
+  terrainGeometry,
+  new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.98,
+    metalness: 0.01,
+    flatShading: false
   })
-]);
+);
+terrain.receiveShadow = true;
+world.add(terrain);
+
+const waterGeometry = new THREE.PlaneGeometry(size, size, 1, 1);
+waterGeometry.rotateX(-Math.PI / 2);
+const water = new THREE.Mesh(
+  waterGeometry,
+  new THREE.MeshStandardMaterial({
+    color: 0x8bb5b5,
+    transparent: true,
+    opacity: 0.28,
+    roughness: 0.38,
+    metalness: 0.05
+  })
+);
+water.position.y = -0.17;
+world.add(water);
 
 const brush = new THREE.Mesh(
-  new THREE.RingGeometry(radius * 0.78, radius * 1.02, 48),
-  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.28, side: THREE.DoubleSide })
+  new THREE.RingGeometry(brushRadius * 0.84, brushRadius, 64),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, side: THREE.DoubleSide })
 );
 brush.rotation.x = -Math.PI / 2;
+brush.position.y = 0.08;
 brush.visible = false;
 scene.add(brush);
 
-const basePlane = new THREE.Mesh(
-  new THREE.PlaneGeometry(80, 80),
-  new THREE.MeshBasicMaterial({ color: 0xdfe7df, transparent: true, opacity: 0.001 })
-);
-basePlane.rotation.x = -Math.PI / 2;
-scene.add(basePlane);
+const rocks = new THREE.Group();
+world.add(rocks);
 
-function axialToWorld(q, r) {
-  return {
-    x: radius * 1.5 * q,
-    z: hexHeight * (r + q / 2)
-  };
+function addRock(x, z, scale = 1) {
+  const rock = new THREE.Mesh(
+    new THREE.DodecahedronGeometry(0.35 * scale, 1),
+    new THREE.MeshStandardMaterial({ color: 0x9d988b, roughness: 0.96 })
+  );
+  rock.position.set(x, getHeightAt(x, z) + 0.24 * scale, z);
+  rock.rotation.set(Math.random() * 0.8, Math.random() * Math.PI, Math.random() * 0.4);
+  rock.scale.set(1.25, 0.55, 0.85);
+  rock.castShadow = true;
+  rocks.add(rock);
 }
 
-function worldToAxial(x, z) {
-  const q = (2 / 3 * x) / radius;
-  const r = (-1 / 3 * x + Math.sqrt(3) / 3 * z) / radius;
-  return roundAxial(q, r);
-}
-
-function roundAxial(q, r) {
-  let x = q;
-  let z = r;
-  let y = -x - z;
-  let rx = Math.round(x);
-  let ry = Math.round(y);
-  let rz = Math.round(z);
-  const xDiff = Math.abs(rx - x);
-  const yDiff = Math.abs(ry - y);
-  const zDiff = Math.abs(rz - z);
-  if (xDiff > yDiff && xDiff > zDiff) rx = -ry - rz;
-  else if (yDiff > zDiff) ry = -rx - rz;
-  else rz = -rx - ry;
-  return { q: rx, r: rz };
-}
-
-function key(q, r) {
-  return `${q},${r}`;
-}
-
-function softHeight(q, r, type) {
-  if (type === 'water') return -0.08;
-  const wave = Math.sin(q * 0.74) * 0.035 + Math.cos(r * 0.62) * 0.035;
-  if (type === 'stone') return 0.12 + wave;
-  return wave;
-}
-
-function paintCell(q, r, type) {
-  const id = key(q, r);
-  const existing = cells.get(id);
-  if (existing) {
-    world.remove(existing.group);
-    cells.delete(id);
-  }
-  if (type === 'erase') return;
-
-  const group = new THREE.Group();
-  const geometry = type === 'water' ? waterGeometry : landGeometry;
-  const mesh = new THREE.Mesh(geometry, materials[type]);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  mesh.scale.y = type === 'stone' ? 1.35 : 1;
-  group.add(mesh);
-
-  if (type !== 'water') {
-    const guide = new THREE.Line(guideGeometry, materials.guide);
-    guide.position.y = 0.018;
-    guide.visible = false;
-    group.add(guide);
-  }
-
-  const pos = axialToWorld(q, r);
-  group.position.set(pos.x, softHeight(q, r, type), pos.z);
-  group.rotation.y = (Math.sin(q * 12.9898 + r * 78.233) * 0.035);
-  group.userData = { q, r, type };
-  world.add(group);
-  cells.set(id, { group, type });
-}
-
-function paintBlob(q, r, type, radiusCells = 1) {
-  for (let dq = -radiusCells; dq <= radiusCells; dq++) {
-    for (let dr = -radiusCells; dr <= radiusCells; dr++) {
-      if (Math.abs(dq + dr) > radiusCells) continue;
-      paintCell(q + dq, r + dr, type);
+function getHeightAt(x, z) {
+  let closest = 0;
+  let best = Infinity;
+  for (let i = 0; i < position.count; i += 3) {
+    const dx = position.getX(i) - x;
+    const dz = position.getZ(i) - z;
+    const d = dx * dx + dz * dz;
+    if (d < best) {
+      best = d;
+      closest = position.getY(i);
     }
+  }
+  return closest;
+}
+
+function pickPoint(event) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const point = new THREE.Vector3();
+  raycaster.ray.intersectPlane(pointerPlane, point);
+  return point;
+}
+
+function paintAt(point, tool) {
+  const colorAttribute = terrainGeometry.attributes.color;
+  let changed = false;
+
+  for (let i = 0; i < position.count; i++) {
+    const x = position.getX(i);
+    const z = position.getZ(i);
+    const dx = x - point.x;
+    const dz = z - point.z;
+    const distance = Math.sqrt(dx * dx + dz * dz);
+    if (distance > brushRadius) continue;
+
+    const falloff = Math.pow(1 - distance / brushRadius, 2);
+    const data = terrainData[i];
+
+    if (tool === 'water') {
+      data.water = THREE.MathUtils.clamp(data.water + falloff * 0.18, 0, 1);
+      data.stone = THREE.MathUtils.clamp(data.stone - falloff * 0.12, 0, 1);
+    } else if (tool === 'stone') {
+      data.stone = THREE.MathUtils.clamp(data.stone + falloff * 0.16, 0, 1);
+      data.water = THREE.MathUtils.clamp(data.water - falloff * 0.08, 0, 1);
+    } else if (tool === 'erase') {
+      data.water = THREE.MathUtils.clamp(data.water - falloff * 0.2, 0, 1);
+      data.stone = THREE.MathUtils.clamp(data.stone - falloff * 0.2, 0, 1);
+    } else {
+      data.water = THREE.MathUtils.clamp(data.water - falloff * 0.15, 0, 1);
+      data.stone = THREE.MathUtils.clamp(data.stone - falloff * 0.1, 0, 1);
+    }
+
+    const targetHeight = baseHeights[i] - data.water * 0.28 + data.stone * 0.42;
+    data.height = THREE.MathUtils.lerp(data.height, targetHeight, 0.85);
+    position.setY(i, data.height);
+
+    const green = palette.grass.clone().lerp(palette.grass2, Math.sin(x * 0.7 + z * 0.4) * 0.15 + 0.25);
+    const color = green.lerp(palette.water, data.water).lerp(palette.stone, data.stone * 0.9);
+    colorAttribute.setXYZ(i, color.r, color.g, color.b);
+    changed = true;
+  }
+
+  if (changed) {
+    position.needsUpdate = true;
+    colorAttribute.needsUpdate = true;
+    terrainGeometry.computeVertexNormals();
   }
 }
 
 function seedWorld() {
-  for (let q = -5; q <= 5; q++) {
-    for (let r = -5; r <= 5; r++) {
-      if (Math.abs(q + r) > 5) continue;
-      const distance = Math.max(Math.abs(q), Math.abs(r), Math.abs(q + r));
-      if (distance < 5) paintCell(q, r, 'grass');
-    }
-  }
+  paintAt(new THREE.Vector3(0, 0, 0), 'water');
+  paintAt(new THREE.Vector3(1.5, 0, -0.5), 'water');
+  paintAt(new THREE.Vector3(-1.2, 0, 0.9), 'water');
+  paintAt(new THREE.Vector3(4.2, 0, 2.5), 'stone');
+  paintAt(new THREE.Vector3(4.8, 0, 2.1), 'stone');
+  paintAt(new THREE.Vector3(-5, 0, -3), 'stone');
+  addRock(4.1, 2.4, 1.2);
+  addRock(4.8, 2.2, 0.85);
+  addRock(-5, -3, 0.9);
+}
 
-  [[0, 0], [1, 0], [0, 1], [-1, 1], [1, -1], [2, -1]].forEach(([q, r]) => paintCell(q, r, 'water'));
-  [[-3, 2], [-4, 2], [3, -2], [3, -3]].forEach(([q, r]) => paintCell(q, r, 'stone'));
+function updateBrush(event) {
+  const point = pickPoint(event);
+  brush.position.x = point.x;
+  brush.position.z = point.z;
+  brush.visible = true;
+  return point;
 }
 
 function setTool(tool) {
@@ -197,40 +223,20 @@ function setTool(tool) {
   tools.forEach(button => button.classList.toggle('active', button.dataset.tool === tool));
 }
 
-function pickCell(event) {
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  raycaster.setFromCamera(pointer, camera);
-  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-  const point = new THREE.Vector3();
-  raycaster.ray.intersectPlane(plane, point);
-  return worldToAxial(point.x, point.z);
-}
-
-function updateBrush(event) {
-  const { q, r } = pickCell(event);
-  const pos = axialToWorld(q, r);
-  brush.position.set(pos.x, 0.05, pos.z);
-  brush.visible = true;
-  return { q, r };
-}
-
 renderer.domElement.addEventListener('pointerdown', event => {
-  downAt = { x: event.clientX, y: event.clientY, time: performance.now() };
+  downAt = { x: event.clientX, y: event.clientY };
   isPainting = true;
+  const point = updateBrush(event);
+  paintAt(point, currentTool);
 });
 
 renderer.domElement.addEventListener('pointermove', event => {
-  const { q, r } = updateBrush(event);
+  const point = updateBrush(event);
   if (!isPainting || !downAt) return;
-  const moved = Math.hypot(event.clientX - downAt.x, event.clientY - downAt.y);
-  if (moved > 10) paintBlob(q, r, currentTool, 1);
+  paintAt(point, currentTool);
 });
 
-renderer.domElement.addEventListener('pointerup', event => {
-  const { q, r } = updateBrush(event);
-  if (downAt) paintBlob(q, r, currentTool, 1);
+renderer.domElement.addEventListener('pointerup', () => {
   downAt = null;
   isPainting = false;
 });
@@ -241,8 +247,18 @@ renderer.domElement.addEventListener('pointerleave', () => {
 });
 
 resetBtn.addEventListener('click', () => {
-  cells.forEach(cell => world.remove(cell.group));
-  cells.clear();
+  rocks.clear();
+  for (let i = 0; i < position.count; i++) {
+    terrainData[i] = { height: baseHeights[i], water: 0, stone: 0 };
+    position.setY(i, baseHeights[i]);
+    const x = position.getX(i);
+    const z = position.getZ(i);
+    const color = palette.grass.clone().lerp(palette.grass2, Math.sin(x * 0.7 + z * 0.4) * 0.15 + 0.25);
+    terrainGeometry.attributes.color.setXYZ(i, color.r, color.g, color.b);
+  }
+  position.needsUpdate = true;
+  terrainGeometry.attributes.color.needsUpdate = true;
+  terrainGeometry.computeVertexNormals();
   seedWorld();
 });
 
@@ -258,6 +274,7 @@ seedWorld();
 
 function animate() {
   controls.update();
+  water.material.opacity = 0.24 + Math.sin(performance.now() * 0.0015) * 0.025;
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
 }
