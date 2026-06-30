@@ -1,5 +1,5 @@
-import * as THREE from 'https://unpkg.com/three@0.165.0/build/three.module.js';
-import { OrbitControls } from 'https://unpkg.com/three@0.165.0/examples/jsm/controls/OrbitControls.js';
+import * as THREE from 'https://esm.sh/three@0.165.0';
+import { OrbitControls } from 'https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js';
 
 const viewport = document.querySelector('#viewport');
 const resetBtn = document.querySelector('#resetBtn');
@@ -131,7 +131,6 @@ function paintCell(q, r, type) {
   const existing = cells.get(id);
   if (existing) {
     world.remove(existing);
-    existing.geometry.dispose?.();
     cells.delete(id);
   }
   if (type === 'erase') return;
