@@ -35,18 +35,25 @@
     </aside>
 
     <aside id="editPanel" class="panel edit-panel ui-layer">
+      <button id="undoBtn" class="mini-btn" type="button">↶</button>
+      <button id="redoBtn" class="mini-btn" type="button">↷</button>
       <button id="brushLockBtn" class="wide-btn" type="button">Pincel: toque</button>
       <div class="brush-size" aria-label="Tamaño del pincel">
         <button class="size-btn" data-size="small" type="button">S</button>
         <button class="size-btn active" data-size="medium" type="button">M</button>
         <button class="size-btn" data-size="large" type="button">L</button>
       </div>
+      <select id="densitySelect" class="density-select" aria-label="Densidad de decoración">
+        <option value="low">Pocas</option>
+        <option value="normal" selected>Normal</option>
+        <option value="high">Muchas</option>
+      </select>
       <span id="modeHint">Arrastra para mover cámara</span>
     </aside>
 
     <aside id="infoPanel" class="panel info-panel ui-layer">
-      <strong>v0.5.1</strong>
-      <span>Rocas más pequeñas y estables. Doble toque para centrar. Pincel 💧 para una cascada simple.</span>
+      <strong>v0.6</strong>
+      <span>Historial, autoguardado y densidad. Ahora puedes deshacer, rehacer y continuar el último mundo.</span>
     </aside>
 
     <nav class="quickbar">
