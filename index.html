@@ -57,6 +57,19 @@
         </div>
       </section>
 
+      <section class="panel camera-panel">
+        <h2>Cámara</h2>
+        <label>Camera X <input id="cameraXInput" type="range" min="-1" max="1" step="0.01" value="0" /></label>
+        <label>Camera Y <input id="cameraYInput" type="range" min="-1" max="1" step="0.01" value="0" /></label>
+        <label>Perspectiva <input id="perspectiveInput" type="range" min="0" max="2" step="0.01" value="1" /></label>
+        <label>Zoom <input id="zoomInput" type="range" min="0.5" max="1.8" step="0.01" value="1" /></label>
+        <label>Tilt <input id="tiltInput" type="range" min="-15" max="15" step="0.5" value="0" /></label>
+        <div class="button-row">
+          <button id="resetCameraBtn" type="button">Reset</button>
+          <button id="autoOrbitBtn" type="button">Auto orbit</button>
+        </div>
+      </section>
+
       <section class="panel">
         <h2>Exportar</h2>
         <div class="button-row">
@@ -69,13 +82,13 @@
 
     <section class="workspace">
       <header class="toolbar">
-        <span>Canvas 4:5 · 1600 × 2000</span>
-        <label><input id="parallaxInput" type="checkbox" /> Preview parallax</label>
+        <span>Canvas 16:9 · 1920 × 1080</span>
+        <span id="cameraStatus">Camera 0, 0 · Perspective 1.00</span>
       </header>
       <div class="canvas-shell">
-        <canvas id="canvas" width="1600" height="2000"></canvas>
+        <canvas id="canvas" width="1920" height="1080"></canvas>
       </div>
-      <p class="hint">Arrastra assets sobre el lienzo. El JSON guarda el scene graph, no incrusta la imagen.</p>
+      <p class="hint">Usa la cámara para apreciar el parallax. Los objetos reaccionan según su profundidad.</p>
     </section>
   </main>
 
