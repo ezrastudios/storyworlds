@@ -1,0 +1,25 @@
+:root{
+  --ink:#302c26;
+  --muted:#756d63;
+  --paper:#f5eee3;
+  --panel:#fff9ee;
+  --line:#d8ccba;
+}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:#e5dac9;color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+button,input,select{font:inherit}
+button,.file-button{border:1px solid var(--line);border-radius:999px;background:#fffdf7;color:var(--ink);padding:10px 14px;cursor:pointer}
+button:hover,.file-button:hover{transform:translateY(-1px)}
+.app{display:grid;grid-template-columns:360px 1fr;gap:16px;min-height:100vh;padding:16px}
+.sidebar,.toolbar{background:var(--panel);border:1px solid #ffffff99;border-radius:24px;padding:16px;box-shadow:0 18px 60px #0002}
+.sidebar{max-height:calc(100vh - 32px);overflow:auto}
+.eyebrow{margin:0 0 4px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase;font-size:12px}
+h1{margin:0;font-size:30px;line-height:1.05}
+h2{margin:0 0 10px;font-size:15px}.intro,.hint,.toolbar label{color:var(--muted)}
+.panel{margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:18px;background:#ffffff80}
+.file-button{display:block;text-align:center}.file-button input{display:none}.button-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.layer-list{display:grid;gap:7px;padding-left:0;list-style:none}.layer-list button{width:100%;text-align:left;border-radius:14px}.layer-list button.active{outline:2px solid #746854;background:#fff0d0}
+.inspector label{display:grid;gap:5px;margin:10px 0;color:var(--muted);font-size:14px}.inspector input,.inspector select{width:100%;border:1px solid var(--line);border-radius:12px;padding:8px;background:#fff;color:var(--ink)}.inspector input[type=checkbox]{width:auto}
+.workspace{display:grid;grid-template-rows:auto 1fr auto;gap:12px;min-width:0}.toolbar{display:flex;justify-content:space-between;align-items:center}.canvas-shell{display:grid;place-items:center;border-radius:28px;background:#cfc3b2;overflow:hidden;box-shadow:0 18px 60px #0002}
+canvas{display:block;max-width:min(100%,calc((100vh - 8rem)*.8));max-height:calc(100vh - 8rem);width:auto;height:auto;background:var(--paper);border-radius:18px;box-shadow:0 22px 70px #0003;touch-action:none}.hint{text-align:center;margin:0 0 4px}
+@media(max-width:860px){.app{grid-template-columns:1fr}.sidebar{max-height:none}canvas{max-width:100%;max-height:70vh}.toolbar{align-items:flex-start;gap:8px;flex-direction:column}}
