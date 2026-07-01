@@ -1,22 +1,39 @@
-# Story Worlds
+# Story Worlds Composer
 
-Creative narrative world builder by Ezra Studios.
+Editor web para construir escenarios por capas y usarlos como referencia visual para ilustraciones Flow, escenas narrativas y generación de imágenes.
 
-## v0.1
+## Qué hace
 
-This first prototype establishes the foundation of the editor:
+- Crea composiciones en formato 4:5.
+- Permite cargar imágenes PNG, JPG, WebP o SVG.
+- Organiza elementos como capas: background, arquitectura, muebles, decoración y foreground.
+- Permite mover, escalar, rotar, ajustar opacidad, blur y profundidad.
+- Simula parallax según la profundidad de cada capa.
+- Exporta el escenario como PNG.
+- Exporta el proyecto como JSON reutilizable.
 
-- Three.js scene
-- mobile-friendly orbit camera
-- hexagonal world grid
-- tap/click painting
-- terrain, water, stone and erase tools
-- soft Flow-inspired interface
+## Modelo de librería
 
-## Run
+La app no necesita guardar imágenes dentro del archivo de escena. Cada escena puede guardar referencias a assets oficiales del repositorio o a imágenes cargadas localmente.
 
-Open `index.html` from a local server or publish the repository with GitHub Pages.
+```txt
+assets/
+  official/
+    backgrounds/
+    architecture/
+    furniture/
+    decor/
+    foreground/
+  manifest.json
+```
 
-Recommended GitHub Pages source:
+## Desarrollo
 
-`main` branch, root folder.
+```bash
+npm install
+npm run dev
+```
+
+## Publicación
+
+El proyecto está preparado para GitHub Pages usando Vite con base `/storyworlds/`.
