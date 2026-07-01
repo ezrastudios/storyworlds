@@ -9,61 +9,31 @@
 <body>
   <main id="app" data-mode="explore" data-brush-lock="off">
     <section id="viewport" aria-label="Lienzo 3D de Story Worlds"></section>
-
     <header class="topbar ui-layer">
-      <div>
-        <p class="eyebrow">Ezra Studios</p>
-        <h1>Story Worlds</h1>
-      </div>
-      <div class="top-actions">
-        <button id="modeBtn" class="pill-btn primary" type="button">Explorar</button>
-        <button id="seedBtn" class="pill-btn" type="button">Nuevo seed</button>
-        <button id="resetBtn" class="pill-btn" type="button">Reiniciar</button>
-      </div>
+      <div><p class="eyebrow">Ezra Studios</p><h1>Story Worlds</h1></div>
+      <div class="top-actions"><button id="modeBtn" class="pill-btn primary" type="button">Explorar</button><button id="seedBtn" class="pill-btn" type="button">Nuevo seed</button><button id="resetBtn" class="pill-btn" type="button">Reiniciar</button></div>
     </header>
-
     <aside id="toolsPanel" class="panel tools-panel ui-layer" aria-label="Herramientas de edición">
-      <button class="tool active" data-tool="grass" type="button" title="Spray visible: pasto, flores y plantas pequeñas">🌿</button>
-      <button class="tool" data-tool="forest" type="button" title="Árboles por bioma">🌳</button>
+      <button class="tool active" data-tool="grass" type="button" title="Spray orgánico">🌿</button>
+      <button class="tool" data-tool="forest" type="button" title="Árboles">🌳</button>
       <button class="tool" data-tool="water" type="button" title="Agua">🌊</button>
-      <button class="tool" data-tool="waterfall" type="button" title="Caída de agua sutil">💧</button>
       <button class="tool" data-tool="stone" type="button" title="Roca">🪨</button>
-      <button class="tool" data-tool="raise" type="button" title="Elevar / Montaña">⛰️</button>
-      <button class="tool" data-tool="lower" type="button" title="Bajar / Cañón">🕳️</button>
+      <button class="tool" data-tool="raise" type="button" title="Elevar">⛰️</button>
+      <button class="tool" data-tool="lower" type="button" title="Bajar">🕳️</button>
       <button class="tool" data-tool="smooth" type="button" title="Suavizar">🪄</button>
       <button class="tool" data-tool="flatten" type="button" title="Aplanar">▭</button>
-      <button class="tool" data-tool="erase" type="button" title="Borrar">⌫</button>
+      <button class="tool" data-tool="erase" type="button" title="Borrar vegetación">⌫</button>
     </aside>
-
     <aside id="editPanel" class="panel edit-panel ui-layer">
-      <button id="undoBtn" class="mini-btn" type="button">↶</button>
-      <button id="redoBtn" class="mini-btn" type="button">↷</button>
+      <button id="undoBtn" class="mini-btn" type="button">↶</button><button id="redoBtn" class="mini-btn" type="button">↷</button><button id="saveBtn" class="mini-btn" type="button">💾</button><button id="loadBtn" class="mini-btn" type="button">📂</button><input id="loadFileInput" type="file" accept=".storyworld,application/json" hidden />
       <button id="brushLockBtn" class="wide-btn" type="button">Pincel: toque</button>
-      <div class="brush-size" aria-label="Tamaño del pincel">
-        <button class="size-btn" data-size="small" type="button">S</button>
-        <button class="size-btn active" data-size="medium" type="button">M</button>
-        <button class="size-btn" data-size="large" type="button">L</button>
-      </div>
-      <select id="densitySelect" class="density-select" aria-label="Densidad de decoración">
-        <option value="low">Pocas</option>
-        <option value="normal" selected>Normal</option>
-        <option value="high">Muchas</option>
-      </select>
-      <label class="time-control" aria-label="Hora del día">☀️<input id="timeSlider" type="range" min="0" max="1" value="0.28" step="0.01" />🌙</label>
-      <span id="modeHint">Arrastra para mover cámara</span>
+      <div class="brush-size" aria-label="Tamaño del pincel"><button class="size-btn" data-size="small" type="button">S</button><button class="size-btn active" data-size="medium" type="button">M</button><button class="size-btn" data-size="large" type="button">L</button></div>
+      <select id="densitySelect" class="density-select" aria-label="Densidad de decoración"><option value="low">Pocas</option><option value="normal" selected>Normal</option><option value="high">Muchas</option></select>
+      <label class="time-control" aria-label="Hora del día">☀️<input id="timeSlider" type="range" min="0" max="1" value="0.28" step="0.01" />🌙</label><span id="modeHint">Autoguardado activo</span>
     </aside>
-
-    <aside id="infoPanel" class="panel info-panel ui-layer">
-      <strong>v0.7.6</strong>
-      <span>Ríos más estrechos con ramificaciones, terrazas naturales y vegetación más visible.</span>
-    </aside>
-
-    <nav class="quickbar">
-      <button id="hideUiBtn" class="round-btn" type="button" aria-label="Ocultar interfaz">👁️</button>
-      <button id="helpBtn" class="round-btn ui-layer" type="button" aria-label="Ayuda">?</button>
-    </nav>
+    <aside id="infoPanel" class="panel info-panel ui-layer"><strong>v0.8.0</strong><span>Guardar, cargar, autoguardado, undo y redo para edición de mundos.</span></aside>
+    <nav class="quickbar"><button id="hideUiBtn" class="round-btn" type="button" aria-label="Ocultar interfaz">👁️</button><button id="helpBtn" class="round-btn ui-layer" type="button" aria-label="Ayuda">?</button></nav>
   </main>
-
   <script type="module" src="./src/main.js"></script>
 </body>
 </html>
