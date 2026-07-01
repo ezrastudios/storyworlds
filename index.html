@@ -16,13 +16,16 @@
     <aside id="toolsPanel" class="panel tools-panel ui-layer" aria-label="Herramientas de edición">
       <button class="tool active" data-tool="grass" type="button" title="Spray orgánico">🌿</button>
       <button class="tool" data-tool="forest" type="button" title="Árboles">🌳</button>
+      <button class="tool" data-tool="path" type="button" title="Camino / sendero">🟫</button>
+      <button class="tool" data-tool="bridge" type="button" title="Puente simple">🌉</button>
+      <button class="tool" data-tool="house" type="button" title="Casa básica">🏠</button>
       <button class="tool" data-tool="water" type="button" title="Agua">🌊</button>
       <button class="tool" data-tool="stone" type="button" title="Roca">🪨</button>
       <button class="tool" data-tool="raise" type="button" title="Elevar">⛰️</button>
       <button class="tool" data-tool="lower" type="button" title="Bajar">🕳️</button>
       <button class="tool" data-tool="smooth" type="button" title="Suavizar">🪄</button>
       <button class="tool" data-tool="flatten" type="button" title="Aplanar">▭</button>
-      <button class="tool" data-tool="erase" type="button" title="Borrar vegetación">⌫</button>
+      <button class="tool" data-tool="erase" type="button" title="Borrar objetos">⌫</button>
     </aside>
     <aside id="editPanel" class="panel edit-panel ui-layer">
       <button id="undoBtn" class="mini-btn" type="button">↶</button><button id="redoBtn" class="mini-btn" type="button">↷</button><button id="saveBtn" class="mini-btn" type="button">💾</button><button id="loadBtn" class="mini-btn" type="button">📂</button><input id="loadFileInput" type="file" accept=".storyworld,application/json" hidden />
@@ -31,7 +34,7 @@
       <select id="densitySelect" class="density-select" aria-label="Densidad de decoración"><option value="low">Pocas</option><option value="normal" selected>Normal</option><option value="high">Muchas</option></select>
       <label class="time-control" aria-label="Hora del día">☀️<input id="timeSlider" type="range" min="0" max="1" value="0.28" step="0.01" />🌙</label><span id="modeHint">Autoguardado activo</span>
     </aside>
-    <aside id="infoPanel" class="panel info-panel ui-layer"><strong>v0.8.0</strong><span>Guardar, cargar, autoguardado, undo y redo para edición de mundos.</span></aside>
+    <aside id="infoPanel" class="panel info-panel ui-layer"><strong>v0.8.1</strong><span>Caminos, puentes, casas básicas y borrador de objetos.</span></aside>
     <nav class="quickbar"><button id="hideUiBtn" class="round-btn" type="button" aria-label="Ocultar interfaz">👁️</button><button id="helpBtn" class="round-btn ui-layer" type="button" aria-label="Ayuda">?</button></nav>
   </main>
   <script type="module" src="./src/main.js"></script>
