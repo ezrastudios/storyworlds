@@ -15,10 +15,10 @@
     </header>
     <aside id="toolsPanel" class="panel tools-panel ui-layer" aria-label="Herramientas de edición">
       <button class="tool active" data-tool="grass" type="button" title="Hierba baja y flores">🌿</button>
-      <button class="tool" data-tool="forest" type="button" title="Árboles sin conos">🌳</button>
+      <button class="tool" data-tool="forest" type="button" title="Biblioteca de árboles: toca para colocar, vuelve a tocar para cambiar modelo">🌳</button>
       <button class="tool" data-tool="path" type="button" title="Sendero estrecho">〰️</button>
       <button class="tool" data-tool="bridge" type="button" title="Puente manual">🌉</button>
-      <button class="tool" data-tool="house" type="button" title="Casa orgánica">🏠</button>
+      <button class="tool" data-tool="house" type="button" title="Biblioteca de casas: toca para colocar, vuelve a tocar para cambiar modelo">🏠</button>
       <button class="tool" data-tool="water" type="button" title="Agua">🌊</button>
       <button class="tool" data-tool="stone" type="button" title="Roca">🪨</button>
       <button class="tool" data-tool="raise" type="button" title="Elevar">⛰️</button>
@@ -32,9 +32,9 @@
       <button id="brushLockBtn" class="wide-btn" type="button">Pincel: toque</button>
       <div class="brush-size" aria-label="Tamaño del pincel"><button class="size-btn" data-size="small" type="button">S</button><button class="size-btn active" data-size="medium" type="button">M</button><button class="size-btn" data-size="large" type="button">L</button></div>
       <select id="densitySelect" class="density-select" aria-label="Densidad de decoración"><option value="low">Pocas</option><option value="normal" selected>Normal</option><option value="high">Muchas</option></select>
-      <label class="time-control" aria-label="Hora del día">☀️<input id="timeSlider" type="range" min="0" max="1" value="0.28" step="0.01" />🌙</label><span id="modeHint">Gráficos refinados</span>
+      <label class="time-control" aria-label="Hora del día">☀️<input id="timeSlider" type="range" min="0" max="1" value="0.28" step="0.01" />🌙</label><span id="modeHint">Biblioteca Flow activa</span>
     </aside>
-    <aside id="infoPanel" class="panel info-panel ui-layer"><strong>v0.9.1</strong><span>Assets refinados: sin casas de cubos, sin pinos de cono y sin puentes en masa.</span></aside>
+    <aside id="infoPanel" class="panel info-panel ui-layer"><strong>v0.10.0</strong><span>Biblioteca de assets Flow: casas y árboles ciclan de modelo al tocar el mismo lugar.</span></aside>
     <nav class="quickbar"><button id="hideUiBtn" class="round-btn" type="button" aria-label="Ocultar interfaz">👁️</button><button id="helpBtn" class="round-btn ui-layer" type="button" aria-label="Ayuda">?</button></nav>
   </main>
   <script type="module" src="./src/main.js"></script>
