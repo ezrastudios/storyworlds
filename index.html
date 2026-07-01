@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Story Worlds Composer</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app">
+    <aside class="sidebar">
+      <p class="eyebrow">Ezra Studios</p>
+      <h1>Story Worlds Composer</h1>
+      <p class="intro">Editor de escenarios por capas para referencias Flow, composición visual y fondos exportables.</p>
+
+      <section class="panel">
+        <h2>Agregar imagen</h2>
+        <label class="file-button">
+          Cargar asset local
+          <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" multiple />
+        </label>
+        <div class="button-row">
+          <button id="demoBtn" type="button">Crear demo</button>
+          <button id="clearBtn" type="button">Limpiar</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Capas</h2>
+        <ol id="layerList" class="layer-list"></ol>
+      </section>
+
+      <section class="panel inspector">
+        <h2>Inspector</h2>
+        <label>Nombre <input id="nameInput" type="text" /></label>
+        <label>Categoría
+          <select id="categoryInput">
+            <option value="background">background</option>
+            <option value="architecture">architecture</option>
+            <option value="furniture">furniture</option>
+            <option value="decor">decor</option>
+            <option value="foreground">foreground</option>
+            <option value="character">character</option>
+          </select>
+        </label>
+        <label>Escala <input id="scaleInput" type="range" min="0.1" max="3" step="0.01" /></label>
+        <label>Rotación <input id="rotationInput" type="range" min="-45" max="45" step="1" /></label>
+        <label>Opacidad <input id="opacityInput" type="range" min="0" max="1" step="0.01" /></label>
+        <label>Blur <input id="blurInput" type="range" min="0" max="20" step="0.5" /></label>
+        <label>Profundidad <input id="depthInput" type="range" min="0" max="1" step="0.01" /></label>
+        <label><input id="visibleInput" type="checkbox" /> Visible</label>
+        <label><input id="lockedInput" type="checkbox" /> Bloqueado</label>
+        <div class="button-row">
+          <button id="backBtn" type="button">Atrás</button>
+          <button id="frontBtn" type="button">Frente</button>
+          <button id="deleteBtn" type="button">Borrar</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Exportar</h2>
+        <div class="button-row">
+          <button id="pngBtn" type="button">PNG</button>
+          <button id="jsonBtn" type="button">JSON</button>
+          <button id="promptBtn" type="button">Prompt</button>
+        </div>
+      </section>
+    </aside>
+
+    <section class="workspace">
+      <header class="toolbar">
+        <span>Canvas 4:5 · 1600 × 2000</span>
+        <label><input id="parallaxInput" type="checkbox" /> Preview parallax</label>
+      </header>
+      <div class="canvas-shell">
+        <canvas id="canvas" width="1600" height="2000"></canvas>
+      </div>
+      <p class="hint">Arrastra assets sobre el lienzo. El JSON guarda el scene graph, no incrusta la imagen.</p>
+    </section>
+  </main>
+
+  <script src="main.js"></script>
+</body>
+</html>
